@@ -3,7 +3,7 @@ project:
   output-dir: docs
 
 website:
-  title: "Esercitazioni di elaborazione di segnali - Corso di Misure Industriali"
+  title: "Esercitazioni di esame - Corso di Misure Industriali"
   navbar:
     left:
       - href: index.qmd
@@ -11,6 +11,12 @@ website:
 
 format:
   html:
+    css: styles.css
     toc: true
     lang: it
+    theme:
+      light: flatly
+    font:
+        base: "Source Sans 3"
+        monospace: "JetBrains Mono"
 

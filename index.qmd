@@ -1,13 +1,12 @@
 ---
-title: "Esercitazioni d’esame"
+title: "Esercitazioni di esame"
+author: "Paolo Rossi, 235651"
+date: last-modified
+format: html
+editor: visual
 ---
 
-## Corso
-Misure Meccaniche e Termiche
+Questo sito contiene la raccolta di esercitazioni da consegnare all'esame di **Misure Industriali**, del corso di Ingegneria Industriale, presso l'Università di Trento.
 
-## Studente
-Paolo Rossi
-
-## Contenuto
-Questo sito raccoglie le esercitazioni da consegnare all’esame.
+Le esercitazioni fanno riferimento al sito relativo al [corso di insegnamento](https://mmt-unitn.github.io).
 
