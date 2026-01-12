@@ -1,16 +1,19 @@
-h1.title {
+/*Linea sotto il blocco di intestazione*/
+.quarto-title-block {
   position: relative;
-  padding-bottom: 0.6rem;
-  margin-bottom: 1.2rem;
+  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
 }
 
-h1.title::after {
+.quarto-title-block::after {
   content: "";
   display: block;
   width: 100%;
   height: 3px;
-  margin-top: 0.4rem;
+  margin-top: 0.6rem;
   background-color: rgba(0, 0, 0, 0.15);
   border-radius: 6px;
 }
+
+
 

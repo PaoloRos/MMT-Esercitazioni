@@ -1,0 +1,38 @@
+---
+title: "Scomposizione su base ortogonale"
+author: "Paolo Rossi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+
+source("dig_signal_proc.R")
+```
+
+# Sampled signal: square wave
+
+```{r}
+f0 <- 8     # signal freq.
+fs <- 1000  # sampling freq.
+Ta <- 1     # acquisition time
+dt <- 1/fs  # time step, i.e. sampling period
+
+signal <- tibble(
+  t = seq(dt, Ta, dt),
+  ys = sin(2*pi*f0*t),
+  yq = sign(ys)
+)
+
+signal %>% 
+  pivot_longer(-t, names_to = "signal") %>%
+  ggplot(aes(x=t, y=value, color = signal)) +
+  geom_line()
+```
+
+
