@@ -1,0 +1,13 @@
+---
+title: "Esercitazioni d’esame"
+---
+
+## Corso
+Misure Meccaniche e Termiche
+
+## Studente
+Paolo Rossi
+
+## Contenuto
+Questo sito raccoglie le esercitazioni da consegnare all’esame.
+

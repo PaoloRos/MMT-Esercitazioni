@@ -1,0 +1,16 @@
+project:
+  type: website
+  output-dir: docs
+
+website:
+  title: "Esercitazioni di elaborazione di segnali - Corso di Misure Industriali"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+
+format:
+  html:
+    toc: true
+    lang: it
+
