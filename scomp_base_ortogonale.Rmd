@@ -11,6 +11,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(tidyverse)
 library(ggplot2)
+library(purrr)
+library(plotly)
 
 source("dig_signal_proc.R")
 ```
@@ -24,7 +26,7 @@ Ta <- 1     # acquisition time
 dt <- 1/fs  # time step, i.e. sampling period
 
 signal <- tibble(
-  t = seq(dt, Ta, dt),
+  t = seq(0, Ta, dt),
   ys = sin(2*pi*f0*t),
   yq = sign(ys)
 )
@@ -34,5 +36,41 @@ signal %>%
   ggplot(aes(x=t, y=value, color = signal)) +
   geom_line()
 ```
+
+# Reconstruction of the square wave (decomposition along a normal base)
+
+```{r}
+K <- 80
+f_fund <- 1/Ta
+
+comps <- map_dbl(1:K, \(k) {
+  s <- sin_k(signal$t, f_fund, k)
+  signal$yq %ps% s/norm_ps(s)
+}) %>% zapsmall()
+
+comps
+
+```
+
+```{r}
+signal <- signal %>% mutate(
+  yqk = rowSums(
+    sapply(1:K, \(k) {
+      s <- sin_k(t, f_fund, k)
+      comps[k] * s/norm_ps(s)
+    })
+  )
+)
+
+plot_ly(x = ~signal$t) %>%
+  add_lines(y = ~signal$yq, name = "Square wave", line = list(color = "blue")) %>%
+  add_lines(y = ~signal$yqk, name = "Reconstructed wave", line = list(color = "red")) %>%
+  layout(xaxis = list(title = "Time"), yaxis = list(title = "Signal"))
+```
+
+
+
+
+
 
 
