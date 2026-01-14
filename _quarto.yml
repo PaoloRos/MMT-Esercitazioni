@@ -8,6 +8,8 @@ website:
     left:
       - href: index.qmd
         text: Home
+      - href: ex1.html
+        text: Esercitazione 1
 
 format:
   html:

@@ -1,0 +1,12 @@
+---
+title: "Esercitazione 1"
+author: "Paolo Rossi, 235651"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Questo file riguarda la prima esercitazione.

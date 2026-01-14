@@ -10,3 +10,6 @@ Questo sito contiene la raccolta di esercitazioni da consegnare all'esame di **M
 
 Le esercitazioni fanno riferimento al sito relativo al [corso di insegnamento](https://mmt-unitn.github.io).
 
+# Indice
+
+1. [Esercitazione 1 - Segnale di onda pressoria](ex1.Rmd)

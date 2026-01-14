@@ -1,9 +1,16 @@
 [
   {
+    "objectID": "ex1.html",
+    "href": "ex1.html",
+    "title": "Esercitazione 1",
+    "section": "",
+    "text": "Questo file riguarda la prima esercitazione."
+  },
+  {
     "objectID": "index.html",
     "href": "index.html",
     "title": "Esercitazioni di esame",
     "section": "",
-    "text": "Questo sito contiene la raccolta di esercitazioni da consegnare all’esame di Misure Industriali, del corso di Ingegneria Industriale, presso l’Università di Trento.\nLe esercitazioni fanno riferimento al sito relativo al corso di insegnamento."
+    "text": "Questo sito contiene la raccolta di esercitazioni da consegnare all’esame di Misure Industriali, del corso di Ingegneria Industriale, presso l’Università di Trento.\nLe esercitazioni fanno riferimento al sito relativo al corso di insegnamento.\n\nIndice\n\nEsercitazione 1 - Segnale di onda pressoria"
   }
 ]
