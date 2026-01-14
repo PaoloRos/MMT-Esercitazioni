@@ -10,6 +10,12 @@ Questo sito contiene la raccolta di esercitazioni da consegnare all'esame di **M
 
 Le esercitazioni fanno riferimento al sito relativo al [corso di insegnamento](https://mmt-unitn.github.io).
 
-# Indice
+**poi devo mettere le librerie in un htmle per vedere tutto formattata bene a codice**
 
-1. [Esercitazione 1 - Segnale di onda pressoria](ex1.Rmd)
+# Contenuti
+
+1. Librerie:
+    * [`dig_signal_proc.R`](dig_signal_proc.R): funzioni relative al *digital signal processing*
+    * [`graphics.R`](graphics.R): funzioni relative alla formattazione della grafica
+
+2. [Esercitazione 1 - Segnale di onda pressoria](ex1.Rmd)

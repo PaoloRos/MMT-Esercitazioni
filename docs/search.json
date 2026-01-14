@@ -11,6 +11,6 @@
     "href": "index.html",
     "title": "Esercitazioni di esame",
     "section": "",
-    "text": "Questo sito contiene la raccolta di esercitazioni da consegnare all’esame di Misure Industriali, del corso di Ingegneria Industriale, presso l’Università di Trento.\nLe esercitazioni fanno riferimento al sito relativo al corso di insegnamento.\n\nIndice\n\nEsercitazione 1 - Segnale di onda pressoria"
+    "text": "Questo sito contiene la raccolta di esercitazioni da consegnare all’esame di Misure Industriali, del corso di Ingegneria Industriale, presso l’Università di Trento.\nLe esercitazioni fanno riferimento al sito relativo al corso di insegnamento.\npoi devo mettere le librerie in un htmle per vedere tutto formattata bene a codice\n\nContenuti\n\nLibrerie:\n\ndig_signal_proc.R: funzioni relative al digital signal processing\ngraphics.R: funzioni relative alla formattazione della grafica\n\nEsercitazione 1 - Segnale di onda pressoria"
   }
 ]

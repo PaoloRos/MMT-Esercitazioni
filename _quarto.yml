@@ -8,6 +8,18 @@ website:
     left:
       - href: index.qmd
         text: Home
+        
+      - text: Librerie
+        icon: boxes
+        menu:
+          - text: Digital Signal Processing
+            icon: cpu
+            href: dig_signal_proc.R
+            
+          - text: Formattazione grafica
+            icon: bar-chart
+            href: graphics.R
+        
       - href: ex1.html
         text: Esercitazione 1
 
