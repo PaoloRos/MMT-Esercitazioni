@@ -1,5 +1,6 @@
 ---
 title: "Esercitazione 1"
+subtitle: "Analisi dell'onda pressoria arteriosa"
 author: "Paolo Rossi, 235651"
 date: "`r Sys.Date()`"
 output: html_document
@@ -7,6 +8,116 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(patchwork)
+library(stats)
+library(purrr)
+
 ```
 
-Questo file riguarda la prima esercitazione.
+Per la consegna dell'esercitazione si faccia riferimento a questo [link](https://mmt-unitn.github.io/EsercitazioniCasaDARE/2_CostruzioneSegnaleFiltraggio/DARE_2_CostruzioneSegnaleFiltraggio.html#interpolazione-a-tratti). Mentre le librerie sono rimandate nell'icona `Librerie`.
+
+# Costruzione onda pressoria
+
+Un metodo per interpolare dei punti è mediante una **funzione spline**. Peraltro, questa permette di costruire una funzione "smussata", priva di punti singolari nel dominio interpolato.
+
+Inizialmente è stata costruita una **spline cubica naturale**, che però introduce un nuovo punto di minimo in corrispondenza di $t \approx 0.75\,\mathrm{s}$. Dunque, per garantire che venga seguito il profilo dei punti interpolati (i.e.: è necessario seguire il più possibile l'interpolazione lineare tra i diversi punti), si possono seguire due approcci:
+
+* infittire i punti da interpolare laddove c'è una deviazione dal comportamento desiderato, ed eventualmente attribuirgli maggior importanza;
+
+* **Suggerimento ChatGPT:** costruire una spline monotona shape-preserving, che consente una monotonia locale al variare dei valori del dominio e quindi permette di conservare il profilo desiderato.
+
+Come soluzione è stato scelto l'**approccio proposto dall'intelligenza artificiale**.
+
+```{r}
+# Punti da interpolare
+tind  <- c(0, 0.1, 0.2, 0.3, 0.5, 1)   # istanti "chiave"
+tval  <- c(80, 120, 100, 105, 90, 80)  # valori ai tempi chiave
+
+# Funzione spline cubica naturale
+p_spline <- splinefun(x = tind, y = tval, method = "natural")
+
+# Segnale di onda pressoria
+sig_art <- tibble(
+  t = seq(min(tind), max(tind), length.out = 2000), # dominio temporale più fitto
+  p_art = p_spline(t)
+)
+
+p1 <- sig_art %>% ggplot(aes(x = t, y = p_art)) +
+  geom_line(color = "blue") +
+  labs(x = "Tempo (s)", y = "Pressione (mmHg)", title = "Spline cubica naturale")
+```
+
+```{r}
+# Spline monotona shape-preserving
+p_spline <- splinefun(x = tind, y = tval, method = "monoH.FC")
+
+# Segnale di onda pressoria
+sig_art <- tibble(
+  t = seq(min(tind), max(tind), length.out = 2000), # dominio temporale più fitto
+  p_art = p_spline(t)
+)
+
+p2 <- sig_art %>% ggplot(aes(x = t, y = p_art)) +
+  geom_line(color = "blue") +
+  labs(x = "Tempo (s)", y = "Pressione (mmHg)", title = "Spline monotona shape-preserving")
+
+p1+p2
+```
+
+Simulando **dieci battiti cardiaci**, il segnale complessivo risulta come segue.
+
+```{r include=FALSE}
+# Piecewise linear interpolation (del professore)
+interp_fun <- function(ti, tind, tval) {
+  # "ti" istante da interpolare, "tind" istanti "chiave", "tval" valori ai tempi chiave
+  Dt <- ti - tind
+  Dt <- Dt[Dt>=0]
+  ii <- length(Dt)
+
+  Dt <- Dt[ii] # scarto con tempo chiave corrente
+
+  t_p <- tind[ii] # valore temporale chiave precedente
+  val_p <- tval[ii] # valore chiave precedente
+
+  t_d <- tind[ii+1]  # valore temporale chiave successivo
+  val_d <- tval[ii+1]  # valore chiave successivo
+
+  # Interpolazione lineare e restituzione valore in uscita della funzione
+  val_p + Dt * (val_d - val_p) / (t_d - t_p)
+}
+
+t <- seq(from = 0, to = 1, by = 0.001)  # base dei tempi
+
+p_art <- map_dbl(t[1:length(t)-1], \(t) interp_fun(t, tind, tval))
+
+t <- t[1:length(t)-1]
+
+
+# Simuliamo 10 battiti cardiaci
+p_art <- rep(p_art, 10)
+t <- seq(from = 0, to = 0.001*(length(p_art)-1), by = 0.001)
+
+```
+
+
+```{r}
+# Ripetizione per dieci battiti
+T <- 1
+sig_art <- tibble(
+  t = rep(sig_art$t, times = 10) + rep((0:9) * T, each = length(sig_art$t)),
+  p_art = rep(sig_art$p_art, times = 10)
+)
+
+plot_ly() %>%
+  add_lines(x = t, y = p_art, line = list(color = "red", width = 2.5), name = "Interp. lineare") %>%
+  add_lines(x = sig_art$t, y = sig_art$p_art, line = list(color = "blue", width = 1.5, dash="dashdot"), name = "Spline") %>%
+  layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Pressione (mmHg)"), title = "Onda pressoria")
+```
+
+Si mette in rilievo la presenza di una **cuspide** ad ogni intero di periodo $T = `r T`\,\mathrm{s}$. Per sistemare il problema si potrebbero imporre delle condizioni sul valore e sulle derivate tra le ripetizioni in corrispondenza di quei punti. Ciononostante, considerando che non è immediato il codice e che **il segnale analizzato sarà quello ricostruito mediante le serie di Fourier**, si trascura questo aspetto.
+

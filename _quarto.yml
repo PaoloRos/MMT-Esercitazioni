@@ -33,4 +33,8 @@ format:
     font:
         base: "Source Sans 3"
         monospace: "JetBrains Mono"
+    fig-width: 7
+    fig-height: 5
+    fig-dpi: 300
+    fig-align: center
 
