@@ -207,8 +207,91 @@ plot_ly() %>%
 ```
 
 
+# Filtraggio del segnale
+
+Al segnale viene addizionato del **rumore bianco gaussiano**.
+
+```{r}
+sig_art <- sig_art %>% mutate(
+  p_art_n = p_art_k + rnorm(length(n), 0, 2)
+)
+
+pp <- plot_ly() %>%
+  add_lines(x = sig_art$t, y = sig_art$p_art_n, line = list(color = "blue"), name = "Seg. con rumore") %>%
+  add_lines(x = sig_art$t, y = sig_art$p_art_k, line = list(color = "red"), name = "Seg. nominale") %>%
+  layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Pressione (mmHg)"), title = "Segnale ricostruito con rumore")
+
+pp
+```
+
+La scelta della **frequenza di taglio** per il filtraggio può essere determinata sulla base dello **spettro del segnale**: **trascurando la componente DC**, che è energeticamente predominante ma non informativa sulla dinamica, è possibile valutare il taglio in funzione del **contributo energetico** associato a ciascuna componente in frequenza.
+
+Tale approccio è giustificato dal Teorema di Parseval, il quale afferma che l’energia del segnale nel dominio del tempo è equivalente alla somma dei quadrati dei moduli dei coefficienti della trasformata di Fourier. In forma discreta, coerente con l’utilizzo della FFT, vale infatti:
+$$
+\int_{0}^T s^2(t) \, dt = \sum_{k=1}^N |Y_k|^2.
+$$
+
+Nello specifico il contributo relativo è calcolato come $e_k = \frac{|Y_k|^2}{\sum_k |Y_k|^2}$.
+
+```{r}
+p.fft <- sig_art %>% select(-p_art, -p_art_k) %>%
+  rename(p = p_art_n) %>%
+  mutate(
+    f = n/Ta,
+    fft = fft(p),                           # FFT concessa perché numero intero di periodi (altrimenti applicare windowing)  
+    mod = (2-(f==0)) * Mod(fft)/length(n),  # riscalatura per numero di campioni e spettro monolatero
+    phase = Arg(fft)/pi*180
+  ) %>% slice_head(n = floor(N/2))          # spettro monolatero
+
+p.fft %>% plot_ly(x = ~f) %>%
+  add_segments(xend = ~f, y = 0, yend = ~mod, line = list(color = "#F8766D", width = 1)) %>%
+  add_markers(y = ~mod, marker = list( color = "#F8766D")) %>%
+  layout(
+    xaxis = list(title = "Frequenza (Hz)"),
+    yaxis = list(title = "Ampiezza (mmHg)"),
+    title = "Spettro monolatero"
+  )
+
+```
 
 
+
+```{r}
+p1 <- p.fft %>% filter(f <= 10) %>%               # ci si concentra solo sulle frequenze influenti
+  ggplot(aes(x=f, y=mod)) +
+  geom_spoke(aes(angle = pi/2, y=0, radius = mod), linewidth = 0.2, colour = "#F8766D") +
+  geom_point(colour = "#F8766D") +
+  labs(x = "Frequenza (Hz)", y = "Ampiezza (mmHg)")
+
+p2 <- p.fft %>% filter(f<=10) %>% slice(-1) %>%   # si esclude la componente DC
+  mutate(en_rel = mod^2 / sum(mod^2)) %>%         # calcola il contributo energetico relativo
+  ggplot(aes(x=f, y=en_rel)) +
+  geom_spoke(aes(angle = pi/2, y=0, radius = en_rel), linewidth = 0.2, colour = "#56B4E9") +
+  geom_point(colour = "#56B4E9") +
+  labs(x = "Frequenza (Hz)", y = "Contributo energetico")
+
+p1/p2
+```
+
+```{r include=FALSE}
+max_contr <- p.fft %>%
+  filter(f <= 10) %>%
+  slice(-1) %>%                      # esclude la DC
+  mutate(en_rel = mod^2 / sum(mod^2)) %>%
+  summarise(
+    f_max = f[which.max(en_rel)],
+    en_rel_max = max(en_rel)
+  )
+
+f_max <- max_contr$f_max
+e_max <- max_contr$en_rel_max
+```
+
+::: {.exam-points}
+Frequenza di taglio opportuna.
+:::
+
+Osservando i grafici soprastanti, si evidenzia che la componente a frequenza $f = `r f_max` \,\mathrm{Hz}$ contribuisce per il `r round(e_max*100)`$\,\%$, mentre le altre sono al di sotto del $10\%$. Pertanto, si può provare a scegliere una **frequenza di taglio** di poco superiore a quella precedentemente citata, ossia pari a **$f_c = 2\,\mathrm{Hz}$**.
 
 
 
