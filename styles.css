@@ -15,5 +15,42 @@
   border-radius: 6px;
 }
 
+/*Riquadri azzurri per i punti esame*/
+.exam-points {
+  position: relative;
+  margin: 1.5rem 0;
+  padding: 3.2rem 1.25rem 1.25rem 1.25rem;
+  background-color: #f8fafc;
+  border-left: 4px solid #0d6efd;
+  border-radius: 0.25rem;
+}
+
+/* Header blu con icona */
+.exam-points::before {
+  content: "ℹ️  Risposta al quesito";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+
+  background-color: #e7f1ff;
+  color: #0d6efd;
+
+  font-weight: 600;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid #cfe2ff;
+
+  border-top-left-radius: 0.25rem;
+  border-top-right-radius: 0.25rem;
+}
+
+/* Migliora spaziatura interna */
+.exam-points p:last-child,
+.exam-points ul:last-child {
+  margin-bottom: 0;
+}
+
+
+
 
 

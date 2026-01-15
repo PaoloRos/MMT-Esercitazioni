@@ -53,6 +53,13 @@ comps
 ```
 
 ```{r}
+vec_k <- 1:K
+
+sin_k(signal$t, f_fund, vec_k)
+```
+
+
+```{r}
 signal <- signal %>% mutate(
   yqk = rowSums(
     sapply(1:K, \(k) {

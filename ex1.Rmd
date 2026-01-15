@@ -17,9 +17,20 @@ library(patchwork)
 library(stats)
 library(purrr)
 
+source("dig_signal_proc.R")
+
 ```
 
 Per la consegna dell'esercitazione si faccia riferimento a questo [link](https://mmt-unitn.github.io/EsercitazioniCasaDARE/2_CostruzioneSegnaleFiltraggio/DARE_2_CostruzioneSegnaleFiltraggio.html#interpolazione-a-tratti). Mentre le librerie sono rimandate nell'icona `Librerie`.
+
+**Parametri di campionamento** che verranno considerati nell'analisi:
+
+```{r}
+# Campionamento regolare
+fs <- 1000      # freq. di campionamento
+Ts <- 1/fs      # periodo di campionamento
+```
+
 
 # Costruzione onda pressoria
 
@@ -33,6 +44,10 @@ Inizialmente è stata costruita una **spline cubica naturale**, che però introd
 
 Come soluzione è stato scelto l'**approccio proposto dall'intelligenza artificiale**.
 
+:::{.exam-points}
+Funzione di interpolazione.
+:::
+
 ```{r}
 # Punti da interpolare
 tind  <- c(0, 0.1, 0.2, 0.3, 0.5, 1)   # istanti "chiave"
@@ -42,8 +57,12 @@ tval  <- c(80, 120, 100, 105, 90, 80)  # valori ai tempi chiave
 p_spline <- splinefun(x = tind, y = tval, method = "natural")
 
 # Segnale di onda pressoria
+Ta <- max(tind) - min(tind) # tempo di acquisizioni
+N <- fs*Ta                  # numero di campioni
+
 sig_art <- tibble(
-  t = seq(min(tind), max(tind), length.out = 2000), # dominio temporale più fitto
+  n = 0:(N-1),
+  t = n/fs,
   p_art = p_spline(t)
 )
 
@@ -58,7 +77,8 @@ p_spline <- splinefun(x = tind, y = tval, method = "monoH.FC")
 
 # Segnale di onda pressoria
 sig_art <- tibble(
-  t = seq(min(tind), max(tind), length.out = 2000), # dominio temporale più fitto
+  n = 0:(N-1),
+  t = n/fs,
   p_art = p_spline(t)
 )
 
@@ -106,10 +126,13 @@ t <- seq(from = 0, to = 0.001*(length(p_art)-1), by = 0.001)
 
 
 ```{r}
-# Ripetizione per dieci battiti
-T <- 1
+# Ripetizione per 10 battiti
+Ta <- 10
+N <- fs*Ta
+
 sig_art <- tibble(
-  t = rep(sig_art$t, times = 10) + rep((0:9) * T, each = length(sig_art$t)),
+  n = 0:(N-1),
+  t = n/fs,
   p_art = rep(sig_art$p_art, times = 10)
 )
 
@@ -119,5 +142,74 @@ plot_ly() %>%
   layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Pressione (mmHg)"), title = "Onda pressoria")
 ```
 
-Si mette in rilievo la presenza di una **cuspide** ad ogni intero di periodo $T = `r T`\,\mathrm{s}$. Per sistemare il problema si potrebbero imporre delle condizioni sul valore e sulle derivate tra le ripetizioni in corrispondenza di quei punti. Ciononostante, considerando che non è immediato il codice e che **il segnale analizzato sarà quello ricostruito mediante le serie di Fourier**, si trascura questo aspetto.
+Si mette in rilievo la presenza di una **cuspide** ad ogni intero di periodo $T = 1\,\mathrm{s}$. Per sistemare il problema si potrebbero imporre delle condizioni sul valore e sulle derivate tra le ripetizioni in corrispondenza di quei punti. Ciononostante, considerando che non è immediato il codice e che **il segnale analizzato sarà quello ricostruito mediante le serie di Fourier**, si trascura questo aspetto.
+
+## Ricostruzione mediante serie di Fourier
+
+Il segnale viene ricostruito mediante le serie di Fourier, in cui l'$n$-esimo elemento vale:
+
+$$
+p[n] = a_0 + \sum_{k = 1}^{K} a_k \cos[2\pi k f_0 \, n] + \sum_{k = 1}^{K} a_k \sin[2\pi k f_0  \, n] ,
+$$
+
+dove $f_0$ è la frequenza fondamentale, $K$ è il numero totale di componenti armoniche e $a_k, b_k$ sono le $k$-esime componenti, risultato della [scomposizione su basi orto-normali](https://mmt-unitn.github.io/EsercitazioniAulaDARE/DARE_EsAula1_%20ProdScalareFunz.html). Si osservi che la **componente in DC** non viene divisa per 2, perché è calcolata come la media del segnale, anziché il doppio della media (come da teoria della [trasformata](https://mmt-unitn.github.io/EsercitazioniAulaDARE/DARE_EsAula1_%20ProdScalareFunz.html)).
+
+La $k$-esima componente avrà frequenza pari a $f_k = k f_0 = \frac{k}{T_a}$, dove $T_a = `r Ta`\,\mathrm{s}$ è il tempo di  acquisizione. Perciò, in virtù del Teorema di Nyquist-Shannon, deve valere la seguente disuguaglianza, per la quale si calcola la **massima componente**:
+
+$$
+f_{max} = \frac{k_{max}}{T_a} \leq \frac{f_s}2 \Leftrightarrow k_{max} = \frac{f_s T_a}{2} = 5000, 
+$$
+con $f_s = `r fs`\,\mathrm{Hz}$ la frequenza di campionamento.
+
+::: {.exam-points}
+Ricostruzione segnale anche con i coseni.
+:::
+```{r}
+a0 <- mean(sig_art$p_art)
+
+# La componente DC è ortogonale alle basi seno e cose
+# Per evitare errori numerici, quest'ultima viene sottratta al segnale
+p_art_osc <- sig_art$p_art - a0
+
+K <- 500 # massimo possibile: 5e3
+f_fund <- 1/Ta
+
+comps_cos <- map_dbl(1:K, \(k) {
+  c <- cos_k(sig_art$t, f_fund, k)
+  p_art_osc %ps% c/norm_ps(c)
+}) %>% zapsmall()
+
+comps_sin <- map_dbl(1:K, \(k) {
+  s <- sin_k(sig_art$t, f_fund, k)
+  p_art_osc %ps% s/norm_ps(s)
+}) %>% zapsmall()
+
+comps_sin[1:50]
+```
+
+::: {.exam-points}
+Routine mediante `reduce`. 
+:::
+```{r}
+# Implementazione mediante reduce
+sig_art <- sig_art %>% mutate(
+  p_art_k = a0 + reduce(1:K, \(acc, k) {
+    c <- cos_k(t, f_fund, k)
+    s <- sin_k(t, f_fund, k)
+    acc + comps_cos[k] * c/norm_ps(c) + comps_sin[k] * s/norm_ps(s)
+  }, .init = rep(0, n()))
+)
+
+plot_ly() %>%
+  add_lines(x = sig_art$t, y = sig_art$p_art, line = list(color = "blue"), name = "Originale") %>%
+  add_lines(x = sig_art$t, y = sig_art$p_art_k, line = list(color = "red"), name = "Ricostruito") %>%
+  layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Pressione (mmHg)"), title = "Ricostruzione del segnale")
+```
+
+
+
+
+
+
+
 

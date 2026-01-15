@@ -20,8 +20,11 @@ website:
             icon: bar-chart
             href: graphics.R
         
-      - href: ex1.html
-        text: Esercitazione 1
+      - text: Esercitazioni
+        icon: journal-text
+        menu:
+          - href: ex1.html
+            text: Esercitazione 1
 
 format:
   html:
