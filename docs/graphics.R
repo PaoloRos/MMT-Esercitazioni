@@ -19,9 +19,57 @@ ggbodeplot <- function(tf, fmin=1, fmax=1e4, df=0.01) {
     ggplot(aes(x=f, y=value)) +
       geom_line() +
       scale_x_log10(
+        breaks = 10^seq(floor(log10(fmin)), ceiling(log10(fmax))),
         minor_breaks=scales::minor_breaks_n(10), 
         labels= ~ latex2exp::TeX(paste0("$10^{", log10(.), "}$"))
         ) +
     facet_wrap(~name, nrow=2, scales="free") +
     labs(x="Frequency (Hz)")
+}
+
+ggbodeplot_digital <- function(tf, fs, fmin=1e-3, fmax=NULL, npts=2000, xaxis = c("frequency", "omega")) {
+  
+  # Bode's plot in discrete-time domain
+  # `tf`: transfer function
+  # `fs`: sampling freq.
+  # `xaxis`: defines whether plot the physical freq. or the discrete angular one
+  
+  xaxis <- match.arg(xaxis)
+  if (is.null(fmax)) fmax <- fs/2
+  
+  f <- 10^seq(log10(fmin), log10(fmax), length.out = npts)  # physical frequency
+  w <- 2*pi*f/fs                                            # discrete angular frequency (rad/sample) [0,π]
+  
+  H <- freqz(tf$b, tf$a, w)                               # digital frequency response
+  
+  xtitle = ifelse(xaxis == "frequency", "Frequency (Hz)", latex2exp::TeX("Discrete \\omega (rad/sample)"))
+  
+  p <- tibble(
+    f = H$f * ifelse(xaxis == "frequency", fs/(2*pi), 1),    # H$f returns the previous `w`
+    `Magnitude (dB)` = 20*log10(Mod(H$h)),
+    `Phase (deg)` = Arg(H$h)*180/pi
+  ) %>%
+    pivot_longer(-f) %>%
+    ggplot(aes(x=f, y=value)) +
+    geom_line() +
+    scale_x_log10(
+      breaks = 10^seq(floor(log10(fmin)), ceiling(log10(fmax)), by = 1),
+      minor_breaks = scales::minor_breaks_n(10),
+      labels = ~ latex2exp::TeX(paste0("$10^{", log10(.), "}$"))
+    ) +
+    facet_wrap(~name, nrow=2, scales="free") +
+    labs(x=xtitle, y="") 
+  
+  if (xaxis=="omega") {
+    p <- p + scale_x_log10(
+      breaks = 10^seq(floor(log10(2*pi*fmin/fs)), ceiling(log10(2*pi*fmax/fs)), by = 1),
+      minor_breaks = scales::minor_breaks_n(10),
+      labels = ~ latex2exp::TeX(paste0("$10^{", log10(.), "}$"))
+    ) + 
+      geom_vline(xintercept = pi, linetype = 4, color = "blue") +
+      annotate("text", x = pi, y = Inf, label = expression(pi), vjust = 1.2, hjust = 1.2)
+  }
+  
+  # output
+  p
 }
