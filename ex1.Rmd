@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(dplyr)
 library(ggplot2)
+library(ggExtra)
 library(plotly)
 library(patchwork)
 library(stats)
@@ -306,17 +307,21 @@ fn <- fs/2  # freq. di Nyquist
 ord <- 3    # filtro del 3° ordine
 
 # filtro digitale
-flt <- butter(ord, W=fc/fn, plane="z")
+flt_2Hz <- butter(ord, W=fc/fn, plane="z")
 
-p1 <- sig_art %>% select(-p_art, -p_art_k) %>% rename(p = p_art_n) %>% 
-  mutate(p_flt = signal::filter(flt, p)) %>%
+p.flt_2Hz <- sig_art %>% select(-p_art) %>% rename(p_k = p_art_k, p_n = p_art_n) %>% 
+  mutate(p_flt = signal::filter(flt_2Hz, p_n))
+
+p1 <- p.flt_2Hz %>%
   pivot_longer(
-    cols = c(p, p_flt)
+    cols = c(p_n, p_flt)
+  ) %>% mutate(
+    name = factor(name, levels = c("p_n", "p_flt"))
   ) %>%
   ggplot(aes(x = t, y=value, colour=name)) +
   geom_line() +
   scale_colour_discrete(labels = c(
-    "p" = "Con rumore",
+    "p_n" = "Con rumore",
     "p_flt" = "Filtrato"
   )) +
   labs(x="Tempo (s)", y="Pressione (mmHg)", colour = "Segnale", title = latex2exp::TeX("Filtraggio a $f_{c} = 2\\,$Hz"))
@@ -324,12 +329,16 @@ p1 <- sig_art %>% select(-p_art, -p_art_k) %>% rename(p = p_art_n) %>%
 
 ```{r echo=FALSE}
 fc <- 7
-flt <- butter(ord, W=fc/fn, plane="z")
+flt_7Hz <- butter(ord, W=fc/fn, plane="z")
 
-p2 <- sig_art %>% select(-p_art, -p_art_k) %>% rename(p = p_art_n) %>% 
-  mutate(p_flt = signal::filter(flt, p)) %>%
+p.flt_7Hz <- sig_art %>% select(-p_art) %>% rename(p_k = p_art_k, p_n = p_art_n) %>% 
+  mutate(p_flt = signal::filter(flt_7Hz, p_n))
+
+p2 <- p.flt_7Hz %>%
   pivot_longer(
-    cols = c(p, p_flt)
+    cols = c(p_n, p_flt)
+  ) %>% mutate(
+    name = factor(name, levels = c("p_n", "p_flt"))
   ) %>%
   ggplot(aes(x = t, y=value, colour=name)) +
   geom_line() +
@@ -346,12 +355,13 @@ Alla fine viene scelta una via di mezzo: frequenza di taglio **$f_c = 5\,\mathrm
 
 ```{r}
 fc <- 5
-flt <- butter(ord, W=fc/fn, plane="z")
+flt_5Hz <- butter(ord, W=fc/fn, plane="z")
 
-sig_art %>% select(-p_art, -p_art_k) %>% rename(p = p_art_n) %>% mutate(
-  p_flt = signal::filter(flt, p)
-) %>% plot_ly(x = ~t) %>%
-  add_lines(y = ~p, line = list(color = "blue"), name = "Con rumore") %>%
+p.flt_5Hz <- sig_art %>% select(-p_art) %>% rename(p_k = p_art_k, p_n = p_art_n) %>% 
+  mutate(p_flt = signal::filter(flt_5Hz, p_n))
+
+p.flt_5Hz %>% plot_ly(x = ~t) %>%
+  add_lines(y = ~p_n, line = list(color = "blue"), name = "Con rumore") %>%
   add_lines(y = ~p_flt, line = list(color = "magenta"), name = "Filtrato") %>%
   layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Pressione (mmHg)"), title = "Filtraggio con taglio a 5 Hz")
 ```
@@ -360,8 +370,8 @@ La **funzione di risposta in frequenza** del filtro risulta come segue:
 
 ```{r message=FALSE, warning=FALSE}
 # Filtro butterworth con fc = 5Hz
-p1 <- ggbodeplot_digital(flt, fs, xaxis = "omega")
-p2 <- ggbodeplot_digital(flt, fs, fmin = 1e-1, fmax = 1e2) + geom_vline(xintercept = fc, linetype = 2, color = "red")
+p1 <- ggbodeplot_digital(flt_5Hz, fs, xaxis = "omega")
+p2 <- ggbodeplot_digital(flt_5Hz, fs, fmin = 1e-1, fmax = 1e2) + geom_vline(xintercept = fc, linetype = 2, color = "red")
 
 p1+p2
 ```
@@ -373,10 +383,11 @@ Eliminazione del ritardo.
 L'applicazione di un filtro offline introduce un ritardo rispetto al segnale originale. Per sopperire a tale ritardo si può **filtrare avanti e indietro** nel tempo: in R questo filtro a fase zero è realizzato mediante la funzione `signal::filtfilt`. Tuttavia, sarà necessario affrontare un problema di **distorsione nelle code** del segnale, causato da un **padding automatico** della funzione.
 
 ```{r}
-sig_art %>% select(-p_art, -p_art_k) %>% rename(p = p_art_n) %>% mutate(
-  p_flt = signal::filtfilt(flt, p)
-) %>% plot_ly(x = ~t) %>%
-  add_lines(y = ~p, line = list(color = "blue"), name = "Con rumore") %>%
+p.flt_5Hz <- p.flt_5Hz %>% 
+  mutate(p_flt = signal::filtfilt(flt_5Hz, p_n))
+
+p.flt_5Hz %>% plot_ly(x = ~t) %>%
+  add_lines(y = ~p_n, line = list(color = "blue"), name = "Con rumore") %>%
   add_lines(y = ~p_flt, line = list(color = "magenta"), name = "Filtrato") %>%
   layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Pressione (mmHg)"), title = "Filtraggio con taglio a 5 Hz")
 ```
@@ -389,19 +400,135 @@ Per eliminare la distorsione semplicemente si scartano le code: questa operazion
 # Tuttavia, questo approccio non è abbastanza, perciò vengono tagliate le code a vista.
 # NB: un filtro butterworth è IIR, perciò senza memoria, ciononostante `filtfilt` usa la lunghezza
 # dei coefficienti per effettuare il padding
-M <- 5*length(flt$b)
+M <- 5*length(flt_5Hz$b)
 
-p_filtered <- sig_art %>% select(-p_art, -p_art_k) %>% rename(p = p_art_n) %>% 
-  mutate(p_flt = signal::filtfilt(flt, p)) %>%
+p.flt_5Hz <- p.flt_5Hz %>%
   dplyr::filter(t > 0.029 & t < 9.75)
  
-p_filtered %>%
+p.flt_5Hz %>%
   plot_ly(x = ~t) %>%
-  add_lines(y = ~p, line = list(color = "blue"), name = "Con rumore") %>%
+  add_lines(y = ~p_n, line = list(color = "blue"), name = "Con rumore") %>%
   add_lines(y = ~p_flt, line = list(color = "magenta"), name = "Filtrato") %>%
   layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Pressione (mmHg)"), title = "Filtraggio con taglio a 5 Hz")
 
 ```
+
+```{r include=FALSE}
+# stessa cosa per gli altri filtri
+p.flt_2Hz <- p.flt_2Hz %>% 
+  mutate(p_flt = signal::filtfilt(flt_2Hz, p_n)) %>%
+  dplyr::filter(t > 0.029 & t < 9.75)
+
+p.flt_7Hz <- p.flt_7Hz %>% 
+  mutate(p_flt = signal::filtfilt(flt_7Hz, p_n)) %>%
+  dplyr::filter(t > 0.029 & t < 9.75)
+```
+
+# Analisi dei residui
+
+I residui sono calcolati come la differenza tra il segnale ricostruito e quello filtrato:
+
+$$
+\varepsilon(n) = p_K(n) - p_{filt}(n).
+$$
+
+Questo permette di quantificare la bonta di filtraggio: cioè quanto il segnale filtrato segue quello nominale (ricostruito mediante Fourier).
+
+I residui verranno calcolati su tutti e tre i segnali filtrati precedentemente.
+
+## Analisi statica
+
+:::{.exam-points}
+Analisi statica dei residui.
+:::
+
+```{r}
+# Traslo il tempo a 0: fa comodo partire da lì
+p.flt_5Hz <- p.flt_5Hz %>% mutate(n=n-n[1], t = t-t[1]) %>%  
+  mutate(eps = p_k - p_flt)
+
+p.flt_2Hz <- p.flt_2Hz %>% mutate(n=n-n[1], t = t-t[1]) %>% 
+  mutate(eps = p_k - p_flt)
+
+p.flt_7Hz <- p.flt_7Hz %>% mutate(n=n-n[1], t = t-t[1]) %>% 
+  mutate(eps = p_k - p_flt)
+
+bind_rows(
+  p.flt_2Hz %>% mutate(caso = "2 Hz"),
+  p.flt_5Hz %>% mutate(caso = "5 Hz"),
+  p.flt_7Hz %>% mutate(caso = "7 Hz")
+) %>% ggplot(aes(x = t, y = eps, colour = caso)) +
+  geom_point(size = 0.6, alpha = 0.6) +
+  labs(x = "Tempo (s)", y = "Residui (mmHg)", colour = "Filtro")
+```
+
+È evidente, come logico che sia, che aumentare la frequenza di taglio riduce i residui: infatti maggiore è la $f_c$, meno le componenti ad alta freqeunza  (di rumore) saranno attenuate.
+
+## Analisi in frequenza
+
+Costruisco lo spettro dei residui.
+
+Faccio una funzione per automatizzare
+
+```{r}
+compute_fft <- function(df, Ta, N, name_sig, monolateral = TRUE) {
+  
+  df <- df %>% mutate(
+    f = n/Ta,
+    fft = fft({{ name_sig }}),
+    mod = ifelse(monolateral, (2-(f==0)), 1) * Mod(fft) / length(n),
+    phase = Arg(fft)/pi*180
+  )
+  
+  if(monolateral)
+    return(df %>% slice_head(n = floor(N/2)))
+  
+  df
+}
+```
+
+
+```{r}
+# Nuovo tempo di campionamento (a causa dell'eliminazione delle code)
+Ta <- max(p.flt_2Hz$t) + 1/fs
+N <- length(p.flt_2Hz$n)
+
+# Spettro dei segnali senza la componenti a f=0
+p.flt_2Hz.fft <- compute_fft(p.flt_2Hz, Ta, N, eps) %>% slice(-1)
+p.flt_5Hz.fft <- compute_fft(p.flt_5Hz, Ta, N, eps) %>% slice(-1)
+p.flt_7Hz.fft <- compute_fft(p.flt_7Hz, Ta, N, eps) %>% slice(-1)
+
+bind_rows(
+  p.flt_2Hz.fft %>% mutate(caso = "2 Hz"),
+  p.flt_5Hz.fft %>% mutate(caso = "5 Hz"),
+  p.flt_7Hz.fft %>% mutate(caso = "7 Hz")
+) %>% dplyr::filter(f < 50) %>% 
+  ggplot(aes(x = f, y = mod)) +
+  geom_spoke(aes(angle = pi/2, y=0, radius = mod), linewidth = 0.2, colour = "#F8766D") +
+  geom_point(colour = "#F8766D") +
+  facet_wrap(~ caso, ncol = 1, scales = "free_x") +
+  labs(
+    x = "Frequenza (Hz)",
+    y = "Ampiezza (mmHg)",
+    title = "Spettri dei segnali filtrati"
+  )
+
+```
+
+Sicuramente aumentare fc riduce gli spettri dei residui.
+
+Non sono convinto dei residui: quelli a 2Hz non coincidono con il grfico di oscillazioni, ok che ho tolo la componente media.
+
+o è sbagliata la funzione di fft, perchè con la media non cambia niente.
+
+```{r}
+compute_fft(p.flt_2Hz, Ta, N, eps) %>% dplyr::filter(f < 50) %>%
+  ggplot(aes(x=f, y=mod)) +
+  geom_spoke(aes(angle = pi/2, y=0, radius = mod), linewidth = 0.2, colour = "#F8766D") +
+  geom_point(colour = "#F8766D") +
+  labs(x = "Frequenza (Hz)", y = "Ampiezza (mmHg)")
+```
+
 
 
 
