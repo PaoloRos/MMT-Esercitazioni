@@ -141,8 +141,8 @@ sig_art <- tibble(
 )
 
 plot_ly() %>%
-  add_lines(x = t, y = p_art, line = list(color = "red", width = 2.5), name = "Interp. lineare") %>%
-  add_lines(x = sig_art$t, y = sig_art$p_art, line = list(color = "blue", width = 1.5, dash="dashdot"), name = "Spline") %>%
+  add_lines(x = t, y = p_art, line = list(width = 2.5), name = "Interp. lineare") %>%
+  add_lines(x = sig_art$t, y = sig_art$p_art, line = list(width = 1.5, dash="dashdot"), name = "Spline") %>%
   layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Pressione (mmHg)"), title = "Onda pressoria")
 ```
 
@@ -205,8 +205,8 @@ sig_art <- sig_art %>% mutate(
 )
 
 plot_ly() %>%
-  add_lines(x = sig_art$t, y = sig_art$p_art, line = list(color = "blue"), name = "Originale") %>%
-  add_lines(x = sig_art$t, y = sig_art$p_art_k, line = list(color = "red"), name = "Ricostruito") %>%
+  add_lines(x = sig_art$t, y = sig_art$p_art, name = "Originale") %>%
+  add_lines(x = sig_art$t, y = sig_art$p_art_k, name = "Ricostruito") %>%
   layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Pressione (mmHg)"), title = "Ricostruzione del segnale")
 ```
 
@@ -221,8 +221,8 @@ sig_art <- sig_art %>% mutate(
 )
 
 pp <- plot_ly() %>%
-  add_lines(x = sig_art$t, y = sig_art$p_art_n, line = list(color = "blue"), name = "Con rumore") %>%
-  add_lines(x = sig_art$t, y = sig_art$p_art_k, line = list(color = "red"), name = "Nominale") %>%
+  add_lines(x = sig_art$t, y = sig_art$p_art_n, name = "Con rumore") %>%
+  add_lines(x = sig_art$t, y = sig_art$p_art_k, name = "Nominale") %>%
   layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Pressione (mmHg)"), title = "Segnale ricostruito con rumore")
 
 pp
@@ -230,7 +230,7 @@ pp
 
 La scelta della **frequenza di taglio** per il filtraggio può essere determinata sulla base dello **spettro del segnale**: **trascurando la componente DC**, che è energeticamente predominante ma non informativa sulla dinamica, è possibile valutare il taglio in funzione del **contributo energetico** associato a ciascuna componente in frequenza.
 
-Tale approccio è giustificato dal Teorema di Parseval, il quale afferma che l’energia del segnale nel dominio del tempo è equivalente alla somma dei quadrati dei moduli dei coefficienti della trasformata di Fourier. In forma discreta, coerente con l’utilizzo della FFT, vale infatti:
+Tale approccio è giustificato dal Teorema di Parseval, il quale afferma che l’energia del segnale nel dominio del tempo è equivalente alla somma dei quadrati dei moduli dei coefficienti della trasformata di Fourier. In forma discreta, coerente con l’utilizzo della [FFT](https://mmt-unitn.github.io/teoria.html#la-trasformata-di-fourier-rapida), vale infatti:
 $$
 \int_{0}^T s^2(t) \, dt = \sum_{k=1}^N |Y_k|^2.
 $$
@@ -267,8 +267,8 @@ p1 <- p.fft %>% dplyr::filter(f <= 10) %>%               # solo frequenze influe
   geom_point(colour = "#F8766D") +
   labs(x = "Frequenza (Hz)", y = "Ampiezza (mmHg)")
 
-p2 <- p.fft %>% dplyr::filter(f<=10) %>% slice(-1) %>%   # si esclude la componente DC
-  mutate(en_rel = mod^2 / sum(mod^2)) %>%         # calcola il contributo energetico relativo
+p2 <- p.fft %>% dplyr::filter(f<=10) %>% slice(-1) %>%  # si esclude la componente DC
+  mutate(en_rel = mod^2 / sum(mod^2)) %>%               # calcola il contributo energetico relativo
   ggplot(aes(x=f, y=en_rel)) +
   geom_spoke(aes(angle = pi/2, y=0, radius = en_rel), linewidth = 0.2, colour = "#56B4E9") +
   geom_point(colour = "#56B4E9") +
@@ -295,7 +295,7 @@ e_max <- max_contr$en_rel_max
 Frequenza di taglio opportuna.
 :::
 
-Osservando gli spettri, è ragionevole adottare una frequenza di taglio di $f_c = 2\,\mathrm{Hz}$, in quanto la componente a frequenza $f = `r f_max` \,\mathrm{Hz}$ contribuisce per il `r round(e_max*100)`$\,\%$ all'energia totale di oscillazione; mentre le altre componenti sono inferiori del 10%.
+Osservando gli spettri, è ragionevole adottare una frequenza di taglio di $f_c = 2\,\mathrm{Hz}$, in quanto la componente a frequenza $f = `r f_max` \,\mathrm{Hz}$ contribuisce per il `r round(e_max*100)`$\,\%$ all'energia totale di oscillazione; mentre le altre componenti sono inferiori del $10\%$.
 
 Dunque, a partire da questa considerazione, si trova la frequenza più adatta procedendo per tentativi.
 
@@ -361,8 +361,8 @@ p.flt_5Hz <- sig_art %>% select(-p_art) %>% rename(p_k = p_art_k, p_n = p_art_n)
   mutate(p_flt = signal::filter(flt_5Hz, p_n))
 
 p.flt_5Hz %>% plot_ly(x = ~t) %>%
-  add_lines(y = ~p_n, line = list(color = "blue"), name = "Con rumore") %>%
-  add_lines(y = ~p_flt, line = list(color = "magenta"), name = "Filtrato") %>%
+  add_lines(y = ~p_n, name = "Con rumore") %>%
+  add_lines(y = ~p_flt, name = "Filtrato") %>%
   layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Pressione (mmHg)"), title = "Filtraggio con taglio a 5 Hz")
 ```
 
@@ -380,15 +380,15 @@ p1+p2
 Eliminazione del ritardo.
 :::
 
-L'applicazione di un filtro offline introduce un ritardo rispetto al segnale originale. Per sopperire a tale ritardo si può **filtrare avanti e indietro** nel tempo: in R questo filtro a fase zero è realizzato mediante la funzione `signal::filtfilt`. Tuttavia, sarà necessario affrontare un problema di **distorsione nelle code** del segnale, causato da un **padding automatico** della funzione.
+L'applicazione di un filtro offline introduce un ritardo rispetto al segnale originale. Per sopperire a tale ritardo si può [filtrare avanti e indietro](https://mmt-unitn.github.io/teoria.html#funzioni-di-trasferimento) nel tempo: in R questo filtro a fase zero è realizzato mediante la funzione `signal::filtfilt`. Tuttavia, sarà necessario affrontare un problema di **distorsione nelle code** del segnale, causato da un **padding automatico** della funzione.
 
 ```{r}
 p.flt_5Hz <- p.flt_5Hz %>% 
   mutate(p_flt = signal::filtfilt(flt_5Hz, p_n))
 
 p.flt_5Hz %>% plot_ly(x = ~t) %>%
-  add_lines(y = ~p_n, line = list(color = "blue"), name = "Con rumore") %>%
-  add_lines(y = ~p_flt, line = list(color = "magenta"), name = "Filtrato") %>%
+  add_lines(y = ~p_n, name = "Con rumore") %>%
+  add_lines(y = ~p_flt, name = "Filtrato") %>%
   layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Pressione (mmHg)"), title = "Filtraggio con taglio a 5 Hz")
 ```
 
@@ -407,8 +407,8 @@ p.flt_5Hz <- p.flt_5Hz %>%
  
 p.flt_5Hz %>%
   plot_ly(x = ~t) %>%
-  add_lines(y = ~p_n, line = list(color = "blue"), name = "Con rumore") %>%
-  add_lines(y = ~p_flt, line = list(color = "magenta"), name = "Filtrato") %>%
+  add_lines(y = ~p_n, name = "Con rumore") %>%
+  add_lines(y = ~p_flt, name = "Filtrato") %>%
   layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Pressione (mmHg)"), title = "Filtraggio con taglio a 5 Hz")
 
 ```
@@ -426,7 +426,7 @@ p.flt_7Hz <- p.flt_7Hz %>%
 
 # Analisi dei residui
 
-I residui sono calcolati come la differenza tra il segnale ricostruito e quello filtrato:
+I residui sono calcolati come la **differenza tra il segnale ricostruito e quello filtrato**:
 
 $$
 \varepsilon(n) = p_K(n) - p_{filt}(n).
@@ -454,23 +454,43 @@ p.flt_7Hz <- p.flt_7Hz %>% mutate(n=n-n[1], t = t-t[1]) %>%
   mutate(eps = p_k - p_flt)
 
 bind_rows(
+  p.flt_2Hz %>% mutate(case = "2 Hz"),
+  p.flt_5Hz %>% mutate(case = "5 Hz"),
+  p.flt_7Hz %>% mutate(case = "7 Hz")
+) %>% pivot_longer(
+  cols = c(p_k, p_flt)
+) %>% mutate(
+    name = factor(name, levels = c("p_k", "p_flt"))
+  ) %>% ggplot(aes(x = t, y = value, colour = name)) +
+  geom_line() +
+  scale_colour_discrete(labels = c(
+    "p_k" = "Ricostruito",
+    "p_flt" = "Filtrato"
+  )) +
+  facet_wrap(~ case, ncol = 1, scales = "free_x") +
+  labs(x = "Tempo (s)", y = "Pressione (mmHg)", colour = "Segnale")
+```
+
+```{r}
+bind_rows(
   p.flt_2Hz %>% mutate(caso = "2 Hz"),
   p.flt_5Hz %>% mutate(caso = "5 Hz"),
   p.flt_7Hz %>% mutate(caso = "7 Hz")
 ) %>% ggplot(aes(x = t, y = eps, colour = caso)) +
   geom_point(size = 0.6, alpha = 0.6) +
-  labs(x = "Tempo (s)", y = "Residui (mmHg)", colour = "Filtro")
+  labs(x = "Tempo (s)", y = "Residui (mmHg)", colour = latex2exp::TeX("$f_c"))
 ```
 
-È evidente, come logico che sia, che aumentare la frequenza di taglio riduce i residui: infatti maggiore è la $f_c$, meno le componenti ad alta freqeunza  (di rumore) saranno attenuate.
+Dai grafici soprastanti è evidente come anticipare il taglio **distorga** il segnale da quello di riferimento.
 
 ## Analisi in frequenza
 
-Costruisco lo spettro dei residui.
-
-Faccio una funzione per automatizzare
+:::{.exam-points}
+Analisi in frequenza dei residui.
+:::
 
 ```{r}
+# Funzione per automatizzare il calcolo dello spettro
 compute_fft <- function(df, Ta, N, name_sig, monolateral = TRUE) {
   
   df <- df %>% mutate(
@@ -486,7 +506,6 @@ compute_fft <- function(df, Ta, N, name_sig, monolateral = TRUE) {
   df
 }
 ```
-
 
 ```{r}
 # Nuovo tempo di campionamento (a causa dell'eliminazione delle code)
@@ -509,26 +528,39 @@ bind_rows(
   facet_wrap(~ caso, ncol = 1, scales = "free_x") +
   labs(
     x = "Frequenza (Hz)",
-    y = "Ampiezza (mmHg)",
+    y = "Ampiezza Residui (mmHg)",
     title = "Spettri dei segnali filtrati"
   )
 
 ```
 
-Sicuramente aumentare fc riduce gli spettri dei residui.
-
-Non sono convinto dei residui: quelli a 2Hz non coincidono con il grfico di oscillazioni, ok che ho tolo la componente media.
-
-o è sbagliata la funzione di fft, perchè con la media non cambia niente.
-
 ```{r}
-compute_fft(p.flt_2Hz, Ta, N, eps) %>% dplyr::filter(f < 50) %>%
-  ggplot(aes(x=f, y=mod)) +
-  geom_spoke(aes(angle = pi/2, y=0, radius = mod), linewidth = 0.2, colour = "#F8766D") +
-  geom_point(colour = "#F8766D") +
-  labs(x = "Frequenza (Hz)", y = "Ampiezza (mmHg)")
+tmp <- list(fc_2 = p.flt_2Hz, fc_5 = p.flt_5Hz, fc_7 = p.flt_7Hz)
+
+stats <-  tibble(
+  fc = c("2 Hz", "5 Hz", "7 Hz"),
+  mean = map_dbl(tmp, ~ mean(.x$eps)),
+  sd = map_dbl(tmp, ~ sd(.x$eps))
+)
+
+knitr::kable(stats, digits = 2, caption = "Statistiche dei residui")
 ```
 
+Anche osservando lo spettro dei residui è chiaro come avere una frequenza di taglio troppo bassa porti ad allontanarsi dall'andamento nominale. Infatti la **dispersione dei residui** tende ad aumentare (si guardi al valore di deviazione standard).
+
+:::{.exam-points}
+Frequenza di taglio finale.
+:::
+
+Dunque, per concludere, da un lato non è opportuno filtrare troppo tardi, poiché non verrebbe filtrato sufficientemente il rumore del segnale. Dall'altra, anticipare eccessivamente il taglio implica una distorsione dal segnale di riferimento, di cui un buon indicatore è la deviazione standard dei residui; questo fenomeno è dovuto a una soverchiante attenuazione di componenti in frequenza, magari proprie del segnale nominale stesso. Quindi, sulla base delle precedenti osservazioni, si sceglie una frequenza di taglio pari a $f_c = 7\,\mathrm{Hz}$, ritenuta la più approssimativa del segnale ricostruito con Fourier.
+
+```{r echo=FALSE}
+p.flt_7Hz %>% plot_ly(x = ~t) %>%
+  add_lines(y = ~p_n, name = "Con rumore") %>%
+  add_lines(y = ~p_k, name = "Nominale") %>%
+  add_lines(y = ~p_flt, name = "Filtrato") %>%
+  layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Pressione (mmHg)"), title = "Filtraggio con taglio a 7 Hz")
+```
 
 
 
