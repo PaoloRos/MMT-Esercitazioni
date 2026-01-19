@@ -25,6 +25,8 @@ website:
         menu:
           - href: ex1.html
             text: Esercitazione 1
+          - href: ex2.html
+            text: Esercitazione 2
 
 format:
   html:

@@ -252,7 +252,7 @@ p.fft %>% plot_ly(x = ~f) %>%
   add_markers(y = ~mod, marker = list( color = "#F8766D")) %>%
   layout(
     xaxis = list(title = "Frequenza (Hz)"),
-    yaxis = list(title = "Ampiezza (mmHg)"),
+    yaxis = list(title = "Ampiezza spettrale (mmHg)"),
     title = "Spettro monolatero"
   )
 

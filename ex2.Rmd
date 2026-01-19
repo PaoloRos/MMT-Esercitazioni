@@ -1,0 +1,262 @@
+---
+title: "Esercitazione 2"
+subtitle: "Modulazione di ampiezza"
+author: "Paolo Rossi, 235651"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(dplyr)
+library(purrr)
+library(ggplot2)
+library(patchwork)
+library(plotly)
+library(signal)
+
+source("dig_signal_proc.R")
+source("graphics.R")
+```
+
+Per la consegna dell'esercitazione si faccia riferimento a questo [link](https://mmt-unitn.github.io/EsercitazioniCasaDARE/DARE_2_ModulazioneAmpiezza.html). Mentre le librerie sono rimandate nell'icona `Librerie`.
+
+# Funzioni e parametri fondamentali
+
+```{r}
+# FUNZIONE: Generazione segnale sinusoidale con diverse armoniche
+signal <- function(t, pars, rad = FALSE) { 
+  stopifnot(is.data.frame(pars))
+  with(pars, {
+    if (!rad) {
+      phi <- phi/180*pi
+      f <- 2*pi*f
+    }
+    map_dbl(t, \(t) sum( map_vec(seq_along(w) , \(i) w[i]*sin(t*f[i] + phi[i] ))))
+  })
+}
+```
+
+```{r}
+# Parametri
+fc <- 2000        # Frequenza di campionamento (Hz)
+fm <- 10          # Frequenza del segnale di misura (Hz)
+fr <- 15          # Frequenza del rumore (Hz)
+fp <- 300         # Frequenza della portante (Hz)
+m <- 0.8          # Indice di modulazione (0 < m < 1)
+duration <- 2     # Durata del segnale (secondi)
+```
+
+# Generazione dei segnali
+
+```{r}
+# Vettore temporale
+t <- seq(0, duration, by = 1/fc)
+
+# Parametri del segnale di misura
+pars_m <- tibble(
+  w = c(1, 0.5, 0.3), f = c(fm, 2*fm, 4*fm), phi = c(0, 0, 0))
+
+# Generiamo il segnale di misura:
+ym <- tibble(
+  t = t,
+  y = signal(t, pars_m),
+  yn = y + rnorm(length(t), 0, pars_m$w[1]/10),
+  f = 0:(length(t)-1)/max(t),
+  fft = fft(yn),
+  intensity = Mod(fft) / length(t)*2,
+  phase = Arg(fft)/pi*180
+)
+
+p1 <- ym %>% ggplot(aes(x = t, y = yn)) +
+  geom_line(color = "#F8766D") +
+  labs(x = "Tempo (s)", y = "Segnale", title = "Segnale di misura")
+
+# Rumore interferente
+pars_r <- tibble(
+  w = c(1, 0.5, 0.8), f = c(fr, 3*fr, 9*fr), phi = c(0, 40, 90))
+
+r <- tibble(
+  t = t,
+  y = signal(t, pars_r),
+  f = 0:(length(t)-1)/max(t),
+  fft = fft(y),
+  intensity = Mod(fft) / length(t)*2,
+  phase = Arg(fft)/pi*180
+)
+
+p2 <- r %>% ggplot(aes(x = t, y = y)) +
+  geom_line(color = "#56B4E9") +
+  labs(x = "Tempo (s)", y = "Segnale", title = "Rumore interferente")
+
+p1/p2
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p1 <- ym %>% dplyr::filter(f <= fc/2) %>% # solo banda utile
+  plot_ly() %>%
+    add_lines(x = ~f, y = ~intensity, type = "bar", name = "Segnale", marker = list(color= "blue")) 
+  
+tmp <- r %>% dplyr::filter(f <= fc/2)
+
+p1 %>% add_lines(x = tmp$f, y = tmp$intensity, type = "bar", name = "Rumore", marker = list(color= "red")) %>%
+  layout(xaxis = list(title = "Frequenza (Hz)"), yaxis = list(title = "Intensità"), title = "Spettri dei due segnali")
+```
+
+## Modulazione
+
+```{r}
+# Onda portante: carrier <- cos(2 * pi * fp * t)
+# Aggiungiamo alla struttura associata alla misura il segnale modulato:
+ym <- ym %>% mutate(
+    yn_m = (1 + m * ym$yn) * cos(2 * pi * fp * t),
+    fft_m = fft(yn_m),
+    intensity_m = Mod(fft_m) / length(t)*2,
+    phase_m = Arg(fft_m)/pi*180
+  )
+
+ym %>% pivot_longer(
+    cols = c(yn, yn_m)
+  ) %>% mutate(
+    name = factor(name, levels = c("yn_m", "yn"))
+  ) %>% ggplot(aes(x = t, y = value, colour = name)) +
+  geom_line() +
+  scale_colour_discrete(labels = c(
+    "yn_m" = "Modulato",
+    "yn" = "Misurato"
+  )) +
+  labs(x = "Tempo (s)", y = "Segnale (c.u.)", colour = "Segnale")
+  
+```
+
+```{r}
+plot_ly() %>%
+  add_bars(data = ym, x = ~f, y = ~intensity, name = "Segnale", marker = list(color = "blue")) %>%
+  add_bars(x = r$f, y = r$intensity, name = "Rumore", marker = list(color = "red")) %>%
+  add_bars(data = ym, x = ~f, y = ~intensity_m, name = "Segnale Modulato", marker = list(color = "green")) %>%
+  layout(title = "Spettro di Intensità",
+       xaxis = list(title = "Frequenza (Hz)", range = c(0, 500), showgrid = TRUE),
+       yaxis = list(title = "Intensità", showgrid = TRUE),
+       legend = list(x = 0.25, y = 0.9))
+```
+
+## Esposizione del segnale modulato al rumore
+
+```{r message=FALSE, warning=FALSE}
+# Effetto interferente sul segnale modulato:
+ym <- ym %>% mutate(
+    yn_m_n = yn_m + r$y,
+    fft_m = fft(yn_m_n),
+    intensity_m = Mod(fft_m) / length(t)*2,
+    phase_m = Arg(fft_m)/pi*180
+  )
+
+plot_ly() %>%
+  add_lines(data = ym, x = ~f, y = ~intensity_m, type = "bar", name = "Segnale", marker = list(color= "blue")) %>%
+  layout(title = "Spettro segnale modulato affetto da rumore",
+       xaxis = list(title = "Frequenza (Hz)", range = c(0, 500), showgrid = TRUE),
+       yaxis = list(title = "Intensità", showgrid = TRUE))
+```
+
+```{r}
+plot_ly() %>%
+  add_lines(data = ym, x = ~t, y = ~yn_m, name = "Segnale modulato") %>%
+  add_lines(data = ym, x = ~t, y = ~yn_m_n, name = "Con effetto interferente") %>%
+  layout(title = "Effetto interferente", 
+         xaxis = list(title = "Tempo (s)"), 
+         yaxis = list(title = "Ampiezza"))
+```
+
+# Ricostruzione del segnale misurato
+
+## Eliminazione del rumore interferente
+
+Osservando lo spettro del segnale modulato esposto al rumore interferente, è intuitivo pensare di dover selezionare solo le frequenze che costituiscono il segnale modulato.
+
+:::{.exam-points}
+Filtro passa-alto.
+:::
+
+Pertanto viene realizzato un filtro passa-alto, in cui la frequenza di taglio viene scelta visivamente in base allo spettro: $f_c = 250\,\mathrm{Hz}$ --> dovrebbe far passare solo il segnale modulato
+
+cutoff filtro a tentativi --> quello che taglia di più il rumore ma non attenua eccessivamente il modulato
+
+```{r}
+f_cutoff <- 200
+flt.butter <- butter(4, f_cutoff/(fc/2), type = "high")  # filtro butterfly passa-alto
+
+ggbodeplot_digital(flt.butter, fc, fmin = 1e1) + geom_vline(xintercept = f_cutoff, linetype = 2, color = "red")
+```
+
+
+```{r}
+ym.flt <- tibble(
+  t = ym$t,
+  yn = ym$yn,
+  yn_m = ym$yn_m,
+  yn_m_n = ym$yn_m_n,
+  yn_m_n.flt = signal::filtfilt(flt.butter, yn_m_n),   # estrae il segnale modulato
+  f = 0:(length(t)-1)/max(t),
+  fft = fft(yn_m_n.flt),
+  intensity = Mod(fft)/length(t)*2,
+  phase = Arg(fft)*180/pi
+) 
+
+ym.flt %>% dplyr::filter(f <= fc/2) %>% plot_ly(x = ~f) %>%
+  add_lines(y = ~intensity) %>%
+  layout(xaxis = list(title="Frequenza (Hz)"), yaxis=list(title="Intensità"), title="Filtraggio del segnale modulato con filtro Butterworth")
+```
+
+rumore interferente ha una componente troppo vicina alla parte modulata -> lo attenuo, ma attenuo anche il segnale. Sluzione:
+
+* aumentare ordine del filtro -> ma non si riesce ad attenuare sufficientemente
+
+* aumentare fcutoff --> mi avvicino troppo alle componente del segnale modulato, attenuandolo così (perdo informazione)
+
+Uso un altro tipo di filtro, con banda di transizione più ristretta (taglio più netto): Chebyshev II (sempre IIR)-> transition band più brusca del butterfly a parità di ordine, ma introduce ripple in stop band --> la andro a filtrare successivamente assieme al rumore bianco
+
+Dalla funzione di rf mi rendo conto che posso usare un cutoff pari alla componente a freq. massima del rumore interferente
+
+```{r}
+f_cutoff <- max(pars_r$f)
+flt.cheby <- cheby2(4, 20, f_cutoff/(fc/2), type = "high")  # N.B.: 20dB di riduzione del ripple in stop band
+
+ggbodeplot_digital(flt.cheby, fc, fmin = 1e1) + geom_vline(xintercept = f_cutoff, linetype = 2, color = "red")
+```
+
+```{r}
+ym.flt <- ym.flt %>% mutate(
+  yn_m_n.flt = signal::filtfilt(flt.cheby, yn_m_n),   # estrae il segnale modulato
+  f = 0:(length(t)-1)/max(t),
+  fft = fft(yn_m_n.flt),
+  intensity = Mod(fft)/length(t)*2,
+  phase = Arg(fft)*180/pi
+) 
+
+ym.flt %>% dplyr::filter(f <= fc/2) %>% plot_ly(x = ~f) %>%
+  add_lines(y = ~intensity) %>%
+  layout(xaxis = list(title="Frequenza (Hz)"), yaxis=list(title="Intensità"), title="Filtraggio del segnale modulato con filtro Chebychev 2")
+```
+
+eliminato componenti rumore interferente
+
+ettenuazione del modulato molto ridotta
+
+```{r}
+ym.flt %>% plot_ly(x = ~t) %>%
+  add_lines(y = ~yn_m_n, name = "Con rumore interferente") %>%
+  add_lines(y = ~yn_m, name = "Modulato") %>%
+  add_lines(y = ~yn_m_n.flt, name = "Filtrato") %>%
+  layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Segnale"), title = "Estrazione del segnale modulato")
+```
+
+Visivamente si vede che i due segnali coincidono.
+
+# Demodulazione
+
+
+
+
+
