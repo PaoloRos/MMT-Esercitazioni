@@ -254,9 +254,60 @@ ym.flt %>% plot_ly(x = ~t) %>%
 
 Visivamente si vede che i due segnali coincidono.
 
-# Demodulazione
+# Demodulazione sincrona
 
+spiegazione teorica
 
+```{r}
+# 1. Mixing
+ym.flt <- ym.flt %>% select(-fft, -intensity, -phase, -f) %>% mutate(
+  y_mix = (2*yn_m_n.flt*cos(2*pi*fp*t) - 1)/m # demodulazione sincrona in un passo
+)
+
+# Filtro passa-basso:
+# usato per attenuare la portante (alta frequenza)
+# e per attenuare il rumore bianco -> che dallo spettro vedo essere minuscolo
+f_cut2 <- 2*max(pars_m$f) # per garantire l'intero segnale misurato
+flt.butter.lp <- butter(2, f_cut2/(fc/2))
+
+ggbodeplot_digital(flt.butter.lp, fc, fmin = 1) + geom_vline(xintercept = f_cut2, linetype = 2, color = "red")
+```
+
+```{r}
+ym.flt <- ym.flt %>% mutate(
+  y_flt2 = filtfilt(flt.butter.lp, y_mix)
+)
+
+ym.flt %>% plot_ly(x = ~t) %>%
+  add_lines(y = ~yn_m_n.flt, name = "Filtrato") %>%
+  add_lines(y = ~y_flt2, name = "Demodulato") %>%
+  layout(xaxis = list(title="Tempo (s)"), yaxis=list(title="Segnale"))
+  
+```
+
+```{r}
+ym.flt %>% pivot_longer(cols = c("yn", "y_flt2")) %>%
+  mutate(
+    name = factor(name, levels = c("yn", "y_flt2"))
+  ) %>% ggplot(aes(x = t, y = value, colour = name)) +
+  geom_line() +
+  scale_colour_discrete(labels = c(yn = "Misurato", y_flt2 = "Demodulato")) +
+  labs(x = "Tempo (s)", y = "Segnale", colour = "Segnale")
+```
+
+notare come il filtraggio pb abbia ridotto nche il rumore bianco
+anche la riduzione di ampiezza per via della rielaborazione
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ym.flt %>% mutate(
+  f = 0:(length(t)-1)/max(t),
+  fft = fft(y_flt2),
+  intensity = Mod(fft)/length(t)*2
+) %>% dplyr::filter(f <= fc/2) %>%
+  plot_ly(x = ~f) %>%
+  add_lines(y = ~intensity, type = "bar", name = "Segnale", marker = list(color= "blue")) %>%
+  layout(xaxis = list(title="Frequenza (Hz)"), yaxis=list(title="Intensità"), title="Spettro del segnale demodulato")
+```
 
 
 
