@@ -23,7 +23,7 @@ source("graphics.R")
 
 Per la consegna dell'esercitazione si faccia riferimento a questo [link](https://mmt-unitn.github.io/EsercitazioniCasaDARE/DARE_2_ModulazioneAmpiezza.html). Mentre le librerie sono rimandate nell'icona `Librerie`.
 
-# Funzioni e parametri fondamentali
+# Funzioni e parametri generali
 
 ```{r}
 # FUNZIONE: Generazione segnale sinusoidale con diverse armoniche
@@ -97,7 +97,7 @@ p1/p2
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 p1 <- ym %>% dplyr::filter(f <= fc/2) %>% # solo banda utile
   plot_ly() %>%
-    add_lines(x = ~f, y = ~intensity, type = "bar", name = "Segnale", marker = list(color= "blue")) 
+    add_lines(x = ~f, y = ~intensity, type = "bar", name = "Segnale di misura", marker = list(color= "blue")) 
   
 tmp <- r %>% dplyr::filter(f <= fc/2)
 
@@ -127,7 +127,7 @@ ym %>% pivot_longer(
     "yn_m" = "Modulato",
     "yn" = "Misurato"
   )) +
-  labs(x = "Tempo (s)", y = "Segnale (c.u.)", colour = "Segnale")
+  labs(x = "Tempo (s)", y = "Segnale", colour = "Segnale")
   
 ```
 
@@ -164,28 +164,34 @@ plot_ly() %>%
 plot_ly() %>%
   add_lines(data = ym, x = ~t, y = ~yn_m, name = "Segnale modulato") %>%
   add_lines(data = ym, x = ~t, y = ~yn_m_n, name = "Con effetto interferente") %>%
-  layout(title = "Effetto interferente", 
+  layout(title = "Segnale modulato affetto da rumore", 
          xaxis = list(title = "Tempo (s)"), 
-         yaxis = list(title = "Ampiezza"))
+         yaxis = list(title = "Segnale"))
 ```
 
 # Ricostruzione del segnale misurato
 
+La ricostruzione del segnale misurato segue principalmente i seguenti passaggi:
+
+1. **eliminazione del rumore interferente**;
+
+2. **demodulazione**, per ottenere il segnale misurato;
+
+3. un eventuale filtraggio per attenuare il rumore bianco.
+
 ## Eliminazione del rumore interferente
 
-Osservando lo spettro del segnale modulato esposto al rumore interferente, è intuitivo pensare di dover selezionare solo le frequenze che costituiscono il segnale modulato.
+Osservando lo spettro del segnale modulato esposto al rumore interferente, è evidente come le componenti di rumore siano **separate** da quelle del segnale modulato, che si trova ad alta frequenza. Pertanto, può essere implementato un **filtro digitale passa-alto offline** per selezionare solo quello modulato.
 
 :::{.exam-points}
 Filtro passa-alto.
 :::
 
-Pertanto viene realizzato un filtro passa-alto, in cui la frequenza di taglio viene scelta visivamente in base allo spettro: $f_c = 250\,\mathrm{Hz}$ --> dovrebbe far passare solo il segnale modulato
-
-cutoff filtro a tentativi --> quello che taglia di più il rumore ma non attenua eccessivamente il modulato
+Inizialmente è stato scelto un filtro **Butterworth**, il cui ordine e frequenza di taglio sono stati selezionati a tentativi, affinché attenuassero il più possibile l'ultima componente di rumore a `r max(pars_r$f)` Hz senza ridurre eccessivamente il segnale modulato.
 
 ```{r}
 f_cutoff <- 200
-flt.butter <- butter(4, f_cutoff/(fc/2), type = "high")  # filtro butterfly passa-alto
+flt.butter <- butter(4, f_cutoff/(fc/2), type = "high")  # filtro Butterworth passa-alto
 
 ggbodeplot_digital(flt.butter, fc, fmin = 1e1) + geom_vline(xintercept = f_cutoff, linetype = 2, color = "red")
 ```
@@ -209,15 +215,7 @@ ym.flt %>% dplyr::filter(f <= fc/2) %>% plot_ly(x = ~f) %>%
   layout(xaxis = list(title="Frequenza (Hz)"), yaxis=list(title="Intensità"), title="Filtraggio del segnale modulato con filtro Butterworth")
 ```
 
-rumore interferente ha una componente troppo vicina alla parte modulata -> lo attenuo, ma attenuo anche il segnale. Sluzione:
-
-* aumentare ordine del filtro -> ma non si riesce ad attenuare sufficientemente
-
-* aumentare fcutoff --> mi avvicino troppo alle componente del segnale modulato, attenuandolo così (perdo informazione)
-
-Uso un altro tipo di filtro, con banda di transizione più ristretta (taglio più netto): Chebyshev II (sempre IIR)-> transition band più brusca del butterfly a parità di ordine, ma introduce ripple in stop band --> la andro a filtrare successivamente assieme al rumore bianco
-
-Dalla funzione di rf mi rendo conto che posso usare un cutoff pari alla componente a freq. massima del rumore interferente
+Tuttavia, nello spettro compare ancora una componente di rumore e il segnale in banda trasmessa risulta leggermente attenuato. Dunque, viene implementato un filtro di tipo **Chebishev II**, il quale a parità di ordine del Butterfly possiede una banda di transizione più ripida. Questo genere di filtro introdurrà un **ripple** in banda di stop, che però verrà attenuato mediante un filtraggio delle basse frequenze, che è richiesto per eliminare il rumore bianco. Nello specifico, a tentativi è stato scelto un taglio pari alla **componente di più alta frequenza del rumore interferente**.
 
 ```{r}
 f_cutoff <- max(pars_r$f)
@@ -237,12 +235,10 @@ ym.flt <- ym.flt %>% mutate(
 
 ym.flt %>% dplyr::filter(f <= fc/2) %>% plot_ly(x = ~f) %>%
   add_lines(y = ~intensity) %>%
-  layout(xaxis = list(title="Frequenza (Hz)"), yaxis=list(title="Intensità"), title="Filtraggio del segnale modulato con filtro Chebychev 2")
+  layout(xaxis = list(title="Frequenza (Hz)"), yaxis=list(title="Intensità"), title="Filtraggio del segnale modulato con filtro Chebyshev II")
 ```
 
-eliminato componenti rumore interferente
-
-ettenuazione del modulato molto ridotta
+Infatti, ora lo spettro mostra il rumore essere quasi inesistente e il segnale trasmesso quasi privo di attenuazione.
 
 ```{r}
 ym.flt %>% plot_ly(x = ~t) %>%
@@ -252,22 +248,47 @@ ym.flt %>% plot_ly(x = ~t) %>%
   layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = "Segnale"), title = "Estrazione del segnale modulato")
 ```
 
-Visivamente si vede che i due segnali coincidono.
+A conferma del corretto procedimento di filtraggio è il fatto che il segnale ottenuto corrisponde a quello modulato prima dell'esposizione al rumore.
 
-# Demodulazione sincrona
+## Demodulazione
 
-spiegazione teorica
+:::{.exam-points}
+Demodulazione.
+:::
+
+Il processo di demodulazione è quello che permette di **separare il segnale misurato dalla portante**. A tal fine, viene scelta la **demodulazione sincrona** [**suggerimento ChatGPT**], in cui il segnale modulato viene moltiplicato per un'armonica pura con stessa frequenza e fase della portante (per questo si chiama "sincrona"). Nello specifico, i passaggi da seguire sono i seguenti:
+
+1. \textbf{*Mixing*}: 
+
+\begin{aligned}
+y_{mix} :&= y_{mod}(t) \cdot \cos(2\pi f_p t) \\
+&= (1 + m y(t)) \cos^2(2\pi f_p t) \\
+&= (1+my(t))\frac{1+\cos(4\pi f_p t)}{2} \\
+&= \frac{1}2 (1+m y(t)) + \frac{1}2 (1+my(t))\cos(4 \pi f_p t) .
+\end{aligned}
+
+2. **Filtraggio passa-basso**: il segnale ottenuto dal *mixing* è caratterizzato da una componente a bassa frequenza (pari al più a $f_{max}$ del segnale misurato) ed una ad alta frequenza (pari a $2f_p$):
+$$
+LP\{y_{mix}\}(f_{max} < f_{cutoff} \ll 2f_p) \longrightarrow y_{flt} \approx 1+my(t) .
+$$
+
+3. **Rielaborazione matematica** per ottenere il segnale misurato: 
+
+$$
+\frac{1}m (y_{flt} - 1) = y(t) .
+$$
+
+In particolare, il filtro passa-basso permette anche di attenuare il ripple dal filtro Chebyshev e il rumore bianco.
 
 ```{r}
-# 1. Mixing
 ym.flt <- ym.flt %>% select(-fft, -intensity, -phase, -f) %>% mutate(
-  y_mix = (2*yn_m_n.flt*cos(2*pi*fp*t) - 1)/m # demodulazione sincrona in un passo
+  y_mix = (2*yn_m_n.flt*cos(2*pi*fp*t) - 1)/m   # demodulazione + rielaborazione matematica
 )
 
-# Filtro passa-basso:
-# usato per attenuare la portante (alta frequenza)
-# e per attenuare il rumore bianco -> che dallo spettro vedo essere minuscolo
-f_cut2 <- 2*max(pars_m$f) # per garantire l'intero segnale misurato
+# Filtro passa-basso
+# Taglio al doppio della freq. max del segnale misurato
+# per far passare l'intero suo spettro
+f_cut2 <- 2*max(pars_m$f)
 flt.butter.lp <- butter(2, f_cut2/(fc/2))
 
 ggbodeplot_digital(flt.butter.lp, fc, fmin = 1) + geom_vline(xintercept = f_cut2, linetype = 2, color = "red")
@@ -281,9 +302,13 @@ ym.flt <- ym.flt %>% mutate(
 ym.flt %>% plot_ly(x = ~t) %>%
   add_lines(y = ~yn_m_n.flt, name = "Filtrato") %>%
   add_lines(y = ~y_flt2, name = "Demodulato") %>%
-  layout(xaxis = list(title="Tempo (s)"), yaxis=list(title="Segnale"))
+  layout(xaxis = list(title="Tempo (s)"), yaxis=list(title="Segnale"), title = "Demodulazione")
   
 ```
+
+:::{.exam-points}
+Comparazione con la misura originale.
+:::
 
 ```{r}
 ym.flt %>% pivot_longer(cols = c("yn", "y_flt2")) %>%
@@ -291,12 +316,11 @@ ym.flt %>% pivot_longer(cols = c("yn", "y_flt2")) %>%
     name = factor(name, levels = c("yn", "y_flt2"))
   ) %>% ggplot(aes(x = t, y = value, colour = name)) +
   geom_line() +
-  scale_colour_discrete(labels = c(yn = "Misurato", y_flt2 = "Demodulato")) +
+  scale_colour_discrete(labels = c(yn = "Originale", y_flt2 = "Demodulato")) +
   labs(x = "Tempo (s)", y = "Segnale", colour = "Segnale")
 ```
 
-notare come il filtraggio pb abbia ridotto nche il rumore bianco
-anche la riduzione di ampiezza per via della rielaborazione
+Si osservi come il processo di demodulazione ha permesso anche di **filtrare il rumore**.
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 ym.flt %>% mutate(
