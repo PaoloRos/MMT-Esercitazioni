@@ -26,6 +26,28 @@ psDnN <- function(a, b, n = 1) {
 cos_k <- function(t, f, k=1) cos(2*pi*f*k*t)
 sin_k <- function(t, f, k=1) sin(2*pi*f*k*t)
 
+compute_fft <- function(df, Ta, name_sig, monolateral = TRUE) {
+  
+  # Compute the FFT of a signal
+  # df: data frame
+  # Ta: acquisition time
+  # name_sig: name of the signal contained in `df`
+  
+  N <- nrow(df)
+  
+  df <- df %>% mutate(
+    f = n/Ta,
+    fft = fft({{ name_sig }}),
+    mod = ifelse(monolateral, (2-(f==0)), 1) * Mod(fft) / length(n),
+    phase = Arg(fft)/pi*180
+  )
+  
+  if(monolateral)
+    return(df %>% slice_head(n = floor(N/2)))
+  
+  df
+}
+
 # --- Filters ---
 
 # Gaussian mask: law-pass filter, FIR and linear

@@ -39,7 +39,7 @@
     "href": "index.html",
     "title": "Esercitazioni di esame",
     "section": "",
-    "text": "Questo sito contiene la raccolta di esercitazioni da consegnare all’esame di Misure Industriali, del corso di Ingegneria Industriale, presso l’Università di Trento.\nLe esercitazioni fanno riferimento al sito relativo al corso di insegnamento.\npoi devo mettere le librerie in un htmle per vedere tutto formattata bene a codice\n\nQuesti riquadri servono a mettere in rilievo quando viene data risposta ai quesiti dell’esercitazione.\n\n\n1 Contenuti\n\nLibrerie:\n\ndig_signal_proc.R: funzioni relative al digital signal processing\ngraphics.R: funzioni relative alla formattazione della grafica\n\nEsercitazione 1 - Segnale di onda pressoria\nEsercitazione 2 - Modulaione di ampiezza\nEsercitazione 3 - Modulaione di ampiezza"
+    "text": "Questo sito contiene la raccolta di esercitazioni da consegnare all’esame di Misure Industriali, del corso di Ingegneria Industriale, presso l’Università di Trento.\nLe esercitazioni fanno riferimento al sito relativo al corso di insegnamento.\npoi devo mettere le librerie in un htmle per vedere tutto formattata bene a codice\n\nQuesti riquadri servono a mettere in rilievo quando viene data risposta ai quesiti dell’esercitazione.\n\n\n1 Contenuti\n\nLibrerie:\n\ndig_signal_proc.R: funzioni relative al digital signal processing\ngraphics.R: funzioni relative alla formattazione della grafica\n\nEsercitazione 1 - Segnale di onda pressoria\nEsercitazione 2 - Modulaione di ampiezza\nEsercitazione 3 - Taratura dinamica tramite regressione non lineare\nEsercitazione 4 - Compensazione dinamica"
   },
   {
     "objectID": "ex2.html",
@@ -75,5 +75,19 @@
     "title": "Esercitazione 2",
     "section": "3.2 Demodulazione",
     "text": "3.2 Demodulazione\n\nDemodulazione.\n\nIl processo di demodulazione è quello che permette di separare il segnale misurato dalla portante. A tal fine, viene scelta la demodulazione sincrona [suggerimento ChatGPT], in cui il segnale modulato viene moltiplicato per un’armonica pura con stessa frequenza e fase della portante (per questo si chiama “sincrona”). Nello specifico, i passaggi da seguire sono i seguenti:\n\n:\n\n\\[\\begin{aligned}\ny_{mix} :&= y_{mod}(t) \\cdot \\cos(2\\pi f_p t) \\\\\n&= (1 + m y(t)) \\cos^2(2\\pi f_p t) \\\\\n&= (1+my(t))\\frac{1+\\cos(4\\pi f_p t)}{2} \\\\\n&= \\frac{1}2 (1+m y(t)) + \\frac{1}2 (1+my(t))\\cos(4 \\pi f_p t) .\n\\end{aligned}\\]\n\nFiltraggio passa-basso: il segnale ottenuto dal mixing è caratterizzato da una componente a bassa frequenza (pari al più a \\(f_{max}\\) del segnale misurato) ed una ad alta frequenza (pari a \\(2f_p\\)): \\[\nLP\\{y_{mix}\\}(f_{max} &lt; f_{cutoff} \\ll 2f_p) \\longrightarrow y_{flt} \\approx 1+my(t) .\n\\]\nRielaborazione matematica per ottenere il segnale misurato:\n\n\\[\n\\frac{1}m (y_{flt} - 1) = y(t) .\n\\]\nIn particolare, il filtro passa-basso permette anche di attenuare il ripple dal filtro Chebyshev e il rumore bianco.\n\nym.flt &lt;- ym.flt %&gt;% select(-fft, -intensity, -phase, -f) %&gt;% mutate(\n  y_mix = (2*yn_m_n.flt*cos(2*pi*fp*t) - 1)/m   # demodulazione + rielaborazione matematica\n)\n\n# Filtro passa-basso\n# Taglio al doppio della freq. max del segnale misurato\n# per far passare l'intero suo spettro\nf_cut2 &lt;- 2*max(pars_m$f)\nflt.butter.lp &lt;- butter(2, f_cut2/(fc/2))\n\nggbodeplot_digital(flt.butter.lp, fc, fmin = 1) + geom_vline(xintercept = f_cut2, linetype = 2, color = \"red\")\n\n\n\n\n\n\n\n\n\nym.flt &lt;- ym.flt %&gt;% mutate(\n  y_flt2 = filtfilt(flt.butter.lp, y_mix)\n)\n\nym.flt %&gt;% plot_ly(x = ~t) %&gt;%\n  add_lines(y = ~yn_m_n.flt, name = \"Filtrato\") %&gt;%\n  add_lines(y = ~y_flt2, name = \"Demodulato\") %&gt;%\n  layout(xaxis = list(title=\"Tempo (s)\"), yaxis=list(title=\"Segnale\"), title = \"Demodulazione\")\n\n\n\n\n\n\nComparazione con la misura originale.\n\n\nym.flt %&gt;% pivot_longer(cols = c(\"yn\", \"y_flt2\")) %&gt;%\n  mutate(\n    name = factor(name, levels = c(\"yn\", \"y_flt2\"))\n  ) %&gt;% ggplot(aes(x = t, y = value, colour = name)) +\n  geom_line() +\n  scale_colour_discrete(labels = c(yn = \"Originale\", y_flt2 = \"Demodulato\")) +\n  labs(x = \"Tempo (s)\", y = \"Segnale\", colour = \"Segnale\")\n\n\n\n\n\n\n\n\nSi osservi come il processo di demodulazione ha permesso anche di filtrare il rumore."
+  },
+  {
+    "objectID": "ex4.html",
+    "href": "ex4.html",
+    "title": "Esercitazione 4",
+    "section": "",
+    "text": "Per la consegna dell’esercitazione si faccia riferimento a questo link. Mentre le librerie sono rimandate nell’icona Librerie."
+  },
+  {
+    "objectID": "ex4.html#spettro-dei-segnali-misurati",
+    "href": "ex4.html#spettro-dei-segnali-misurati",
+    "title": "Esercitazione 4",
+    "section": "2.1 Spettro dei segnali misurati",
+    "text": "2.1 Spettro dei segnali misurati\n\nTa &lt;- max(u$t)\nun.fft &lt;- compute_fft(tmp, Ta, un)\nideal.fft &lt;- compute_fft(tmp, Ta, ideal)\nout.fft &lt;- compute_fft(tmp, Ta, out)\n\nbind_rows(\n  un.fft %&gt;% mutate(caso = \"Input\"),\n  ideal.fft %&gt;% mutate(caso = \"Output ideale\"),\n  out.fft %&gt;% mutate(caso = \"Output\")\n) %&gt;% dplyr::filter(f &lt; 1) %&gt;% \n  ggplot(aes(x = f, y = mod)) +\n  geom_spoke(aes(angle = pi/2, y=0, radius = mod), linewidth = 0.2, colour = \"#F8766D\") +\n  geom_point(colour = \"#F8766D\") +\n  facet_wrap(~ caso, ncol = 1, scales = \"free_x\") +\n  labs(\n    x = \"Frequenza (Hz)\",\n    y = \"Intensità\"\n  )\n\n\n\n\n\n\n\n\nNB: non si vede, ma il rumore bianco è presente. Provare ad ingrandire la dev. std. del rumore addizionato a un."
   }
 ]

@@ -1,6 +1,12 @@
 # This file contains some functions for graphics formatting
 
-ggbodeplot <- function(tf, fmin=1, fmax=1e4, df=0.01) {
+ggbodeplot_continous <- function(tf, fs, fmin=1, fmax=NULL, df=0.01) {
+  
+  # Bode's plot in continous-time domain
+  # `tf`: transfer function
+  # `fs`: sampling freq.
+  
+  if (is.null(fmax)) fmax <- fs/2
   
   # vector of points for each order of magnitude (OOM):
   pts <- 10^seq(0, 1, df) %>% tail(-1)
@@ -24,7 +30,7 @@ ggbodeplot <- function(tf, fmin=1, fmax=1e4, df=0.01) {
         labels= ~ latex2exp::TeX(paste0("$10^{", log10(.), "}$"))
         ) +
     facet_wrap(~name, nrow=2, scales="free") +
-    labs(x="Frequency (Hz)")
+    labs(x="Frequency (Hz)", y="")
 }
 
 ggbodeplot_digital <- function(tf, fs, fmin=1e-3, fmax=NULL, npts=2000, xaxis = c("frequency", "omega")) {

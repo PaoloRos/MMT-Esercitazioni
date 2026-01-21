@@ -1,0 +1,293 @@
+---
+title: "Esercitazione 4"
+subtitle: "Compensazione dinamica"
+author: "Paolo Rossi, 235651"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Per la consegna dell'esercitazione si faccia riferimento a questo [link](https://mmt-unitn.github.io/EsercitazioniCasaDARE/DARE_4_Compensazione_dinamica.html). Mentre le librerie sono rimandate nell'icona `Librerie`.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(dplyr)
+library(purrr)
+library(ggplot2)
+library(patchwork)
+library(plotly)
+
+library(control)
+library(signal)
+library(stats)
+
+source("graphics.R")
+source("dig_signal_proc.R")
+```
+
+# Funzioni di utilità
+
+```{r}
+# Generazione sinusoidale con diverse armoniche
+signal <- function(t, pars, rad = FALSE) { 
+  stopifnot(is.data.frame(pars))
+  with(pars, {
+    if (!rad) {
+      phi <- phi/180*pi
+      f <- 2*pi*f
+    }
+    map_dbl(t, \(t) sum( map_vec(seq_along(w) , \(i) w[i]*sin(t*f[i] + phi[i] ))))
+  })
+}
+```
+
+# Simulazione uscita sistema di misura
+
+```{r}
+# Parametri del misurando (input del sistema di misura)
+pars <- tibble(
+  w = c(1, 0.3, 0.3), 
+  f = c(1/30, 1/10, 1/4), 
+  phi = c(0, 0, 0)
+)
+
+# Generiamo il misurando u
+Ts <- 0.01            # periodo di campionamento
+fs <- 1/Ts            # freq. di campionamento   
+u <- tibble(
+  t = 0:10000 * Ts,
+  u = signal(t, pars),
+  un = u + rnorm(length(t), 0, pars$w[1]/10)
+)
+```
+
+```{r}
+# Definiamo la Funzione di Trasferimento dello strumento
+num <- c(5, 1)   # 5s + 1
+den <- c(1, 2, 1) # s^2 + 2s + 1
+H <- tf(num, den)
+print(H)
+```
+
+```{r echo=FALSE}
+ggbodeplot_continous(H, fs, fmin = 1e-3)
+```
+
+```{r}
+# Simulazione dell'uscita nel tempo
+tmp <- u %>% mutate(
+    out = lsim(H, un, t)$y[1,],
+    ideal = lsim(H, u, t)$y[1,]
+  ) %>% mutate(n = row_number(), .before = t)
+
+tmp %>% plot_ly(x = ~t) %>%
+  add_lines(y = ~un, name = "Input") %>%
+  add_lines(y = ~ideal, name = "Output ideale") %>%
+  add_lines(y = ~out, name = "Output") %>%
+  layout(xaxis=list(title="Tempo (s)"), yaxis=list(title=""), title = "Simulazione dell'uscita")
+```
+
+Notare che `lsim` calcola la risposta nel tempo di un sistema lineare.
+
+## Spettro dei segnali misurati
+
+```{r}
+Ta <- max(u$t)
+un.fft <- compute_fft(tmp, Ta, un)
+ideal.fft <- compute_fft(tmp, Ta, ideal)
+out.fft <- compute_fft(tmp, Ta, out)
+
+bind_rows(
+  un.fft %>% mutate(caso = "Input"),
+  ideal.fft %>% mutate(caso = "Output ideale"),
+  out.fft %>% mutate(caso = "Output")
+) %>% dplyr::filter(f < 1) %>% 
+  ggplot(aes(x = f, y = mod)) +
+  geom_spoke(aes(angle = pi/2, y=0, radius = mod), linewidth = 0.2, colour = "#F8766D") +
+  geom_point(colour = "#F8766D") +
+  facet_wrap(~ caso, ncol = 1, scales = "free_x") +
+  labs(
+    x = "Frequenza (Hz)",
+    y = "Intensità"
+  )
+```
+
+**NB**: non si vede, ma il rumore bianco è presente. Provare ad ingrandire la dev. std. del rumore addizionato a `un`.
+
+# Stima del misurando a partire dal segnale di uscita
+
+```{r}
+# Segnale in uscita con rumore
+yI <- lsim(H, u$u, u$t)$y[1,]
+yn <- yI + rnorm(length(u$t), 0, pars$w[1]/10)
+
+
+# Ricaviamo l'inversa della Funzione di Trasferimento:
+Hinv <- tf(den, num)
+print(Hinv)
+```
+
+```{r echo=FALSE}
+ggbodeplot_continous(Hinv, fs, fmin = 1e-3)
+```
+
+```{r}
+# Simulazione dell'ingresso
+#input <- lsim(Hinv, yn, y$t, x0 = rep(0, length(pole(Hinv))))
+```
+
+```
+Error in tf2ss(num, den) :
+TF2SS: The order of the Numerator should be equal or lesser than the Denominator.
+```
+
+:::{.exam-points}
+Implementazione della compensazione dinamica.
+:::
+
+Il problema risiede nel fatto che la funzione `lsim` è progettata per calcolare la risposta nel tempo di un sistema LTI proprio ($deg(\text{NUM}) \leq deg(\text{DEN})$). Nel caso dell'inversa $H^{-1}(j\omega)$, è come se si stimasse la risposta di un sistema improprio, per cui `lsim` fallisce.
+
+Risolvo elaborando tutto nel dom della freq e poi antitrasformo.
+
+```{r}
+# filtro l'uscita per ridurre il rumore
+y <- u %>% select(t) %>% mutate(n = row_number(t), .before = t) %>%
+  mutate(
+    y_id = yI,
+    y_n = yn
+  )
+
+compute_fft(y, Ta, yn) %>% dplyr::filter(f < 2.5) %>%
+  ggplot(aes(x = f, y = mod)) +
+  geom_spoke(aes(angle = pi/2, y=0, radius = mod), linewidth = 0.2, colour = "#56B4E9") +
+  geom_point(colour = "#56B4E9") +
+  labs(x = "Frequenza (Hz)", y = "Intensità")
+```
+
+```{r}
+# filtro a 1Hz
+fc <- 1
+flt <- butter(2, fc/(fs/2))
+
+ggbodeplot_digital(flt, fs, fmin = 1e-1, fmax = 1e1) + geom_vline(xintercept = fc, color="red", linetype = 2)
+
+y <- y %>% mutate(y_flt = signal::filtfilt(flt, yn))
+```
+
+```{r echo=FALSE}
+y %>% pivot_longer(cols = c("y_n", "y_flt")) %>% 
+  mutate(name = factor(name, levels = c("y_n", "y_flt"))) %>%
+  ggplot(aes(x = t, y = value, colour = name)) +
+  geom_line() +
+  scale_color_discrete(labels = c(y_n = "Con rumore", y_flt = "Filtrata")) +
+  labs(x = "Tempo (s)", y="Output", colour = "Segnale")
+```
+
+```{r}
+# per padding automatico di filtfilt ho una distorsione, perciò taglio il segnale di uscita
+y <- y %>% dplyr::filter(t <= 99)
+
+# Nuovo tempo di campionamento
+Ta <- max(y$t)
+```
+
+```{r eval=FALSE, include=FALSE}
+y %>% pivot_longer(cols = c("y_n", "y_flt")) %>% 
+  mutate(name = factor(name, levels = c("y_n", "y_flt"))) %>%
+  ggplot(aes(x = t, y = value, colour = name)) +
+  geom_line() +
+  scale_color_discrete(labels = c(y_n = "Con rumore", y_flt = "Filtrata")) +
+  labs(x = "Tempo (s)", y="Output", colour = "Segnale")
+```
+
+
+[ChatGPT] Per chiarezza e per evitare errori numerici, viene calcolata esplicitamente la funzione di risposta in frequenza, anziche usare la `freqresp`.
+
+```{r}
+# Trasformata di Fourier (FFT)
+y <- y %>% mutate(
+  Y =fft(y_flt)
+)
+
+# Asse frequenze
+f <- (0:(length(y$t)-1))/Ta
+w <- 2*pi*f  
+
+# Rispostan in frequenza e sua inversa
+Hiw <- freqresp(H, w)
+Hiw_inv <- Conj(Hiw)/(Mod(Hiw)) # inverso di un numero complesso
+```
+
+```{r}
+# Inverto la caratteristica dinamica e anti-trasformo
+u_comp <- tibble(
+  t = y$t,
+  U = Hiw_inv * y$Y,
+  u = Re(fft(U, inverse = TRUE)) / length(t) # Re() serve a trascurare dei residui di calcolo nella parte Im 
+  # la fft(inverse = TRUE) ritorna l'inversa NON-normalizzata, perciò si divide per la lunghezza del campione
+)
+```
+
+```{r}
+
+u_comp %>% plot_ly(x = ~t) %>%
+  add_lines(y = u$un[u$t <= Ta], name = "Reale") %>%
+  add_lines(y = u$u[u$t <= Ta], name = "Ideale") %>%
+  add_lines(y = ~u, name = "Compensato") #%>% add_lines(y = y$y_n, name = "Uscita")
+```
+
+
+ho amplificazione e fase introdotta dal processo di compensazione.
+
+Supponendo di dover tarare lo strumento di misura, considero il segnale di input (misurando) come riferimento. Perciò posso effetuare le seguenti operazioni per sopperire ai problemi di sfasamento e ampiezza. Nello specifico considero il riferimento ideale.
+
+[Suggerimento ChatGPT]
+
+Ritardo mediante la cross-correlazione tra i due segnali: trovo il lag per il quale ho la massima correlazione (in cui i segnali si somigliano di più)
+
+```{r}
+lag <- which.max(ccf(u$u, u_comp$u, plot = FALSE)$acf)
+```
+
+```{r}
+cc <- ccf(u$u, u_comp$u, plot = FALSE)
+lag_samples <- cc$lag[ which.max(cc$acf) ]
+```
+
+```{r}
+shift_signal <- function(x, k) {
+  n <- length(x)
+  if (k > 0) {
+    c(rep(NA, k), x[1:(n - k)])
+  } else if (k < 0) {
+    k <- abs(k)
+    c(x[(k + 1):n], rep(NA, k))
+  } else {
+    x
+  }
+}
+
+```
+
+```{r}
+u_comp$u_aligned <- shift_signal(u_comp$u, +lag_samples)
+```
+
+```{r}
+u_comp %>% plot_ly(x = ~t) %>%
+  add_lines(y = u$un[u$t <= Ta], name = "Reale") %>%
+  add_lines(y = u$u[u$t <= Ta], name = "Ideale") %>%
+  add_lines(y = ~u, name = "Compensato") %>%
+  add_lines(y = ~u_aligned, name = "Allineato") #%>% add_lines(y = y$y_n, name = "Uscita")
+```
+
+
+Proposte di soluzione:
+
+- ritardo: shift con X-cor -> c'ho provato ma non facile e mi viene sbagliato
+
+- ampiezza: è l'inversa della funzione che causa questo, si dovrebbe compensare nel dominio della freqeunza -> modificare la funz di trasf (inversa)
+
+
+
