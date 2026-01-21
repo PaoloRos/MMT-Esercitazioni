@@ -121,6 +121,10 @@ Parametri di campionamento (regolare):
 
 # Taratura costanti $\tau_1$ e $\tau_2$
 
+:::{.exam-points}
+Regressione sulle sole costanti di tempo.
+:::
+
 ```{r}
 t0 <- 28                        # soglia temporale tra plateau e transizione
 Ti <- mean(df$temp[df$t < t0])
@@ -191,6 +195,10 @@ df %>% add_residuals(df.nls_tau) %>% ggplot(aes(x = t, y = resid)) +
 ```
 
 # Taratura su tutti i parametri
+
+:::{.exam-points}
+Regressione su tutti i parametri.
+:::
 
 ```{r}
 params <- list(t0 = t0,
@@ -263,6 +271,10 @@ df %>% add_residuals(df.nls_tau) %>% ggplot(aes(x = t, y = resid)) +
 
 
 # Intervallo di confidenza dei parametri
+
+:::{.exam-points}
+Intervallo di confidenza dei parametri mediante *bootstrap*.
+:::
 
 L'intervallo di confidenza (IC) viene calcolato al $95\%$: ossia è quell'intervallo al quale i parametri regrediti appartengono con tale probabilità.
 
