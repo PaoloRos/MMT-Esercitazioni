@@ -27,6 +27,8 @@ website:
             text: Esercitazione 1
           - href: ex2.html
             text: Esercitazione 2
+          - href: ex3.html
+            text: Esercitazione 3
 
 format:
   html:

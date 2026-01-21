@@ -1,0 +1,348 @@
+---
+title: "Esercitazione 3"
+subtitle: "Taratura dinamica tramite regressione non lineare"
+author: "Paolo Rossi, 235651"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(dplyr)
+library(purrr)
+library(ggplot2)
+library(plotly)
+library(patchwork)
+
+library(modelr)
+library(signal)
+library(stats)
+library(boot)
+```
+
+Per la consegna dell'esercitazione si faccia riferimento a questo [link](https://mmt-unitn.github.io/EsercitazioniCasaDARE/3_TaraturaDinamica/DARE_3_taratura%20dinamica.html). Mentre le librerie sono rimandate nell'icona `Librerie`.
+
+# Funzione di trasferimento e risposta al gradino
+
+:::{.exam-points}
+Funzione di trasferimento e risposta al gradino.
+:::
+
+Il principio alla base per ricavare la funzione di trasferimento del sistema è il **bilancio delle potenze termiche scambiate**:
+
+$$
+m c \frac{d}{dt} T(t) = \alpha A(T_{amb}(t)-T(t)) \overset{\mathcal{F}}{\longrightarrow} mc \, j\omega T(j\omega) =\alpha A (T_{amb}(j\omega) - T(j\omega)).
+$$
+
+Perciò, bilanciando la potenza scambiata tra sonda (uscita del sistema) e guaina, si ottiene:
+
+\begin{aligned}
+m_s c_s \, j\omega T_s(j\omega) &= \alpha_{gs} A_{gs} (T_{g}(j\omega) - T_s(j\omega)) \\
+\Leftrightarrow \frac{T_s(j\omega)}{T_g(j\omega)} &= \frac{1}{\tau_1 \, j\omega + 1} ,
+\end{aligned}
+
+dove $\tau_2 = \frac{M_s c_s}{\alpha_{gs} A_{gs}}$.
+
+Mediante gli stessi procedimenti, si può esprimere anche la potenza scambiata tra il misurando (input del sistema) e la guaina:
+
+\begin{aligned}
+m_g c_g \, j\omega T_g(j\omega) &= \alpha_{mg} A_{gs} (T_{m}(j\omega) - T_g(j\omega)) \\
+\Leftrightarrow \frac{T_g(j\omega)}{T_m(j\omega)} &= \frac{1}{\tau_2 \, j\omega + 1} ,
+\end{aligned}
+
+dove dove $\tau_1 = \frac{M_g c_g}{\alpha_{mg} A_{mg}}$.
+
+Pertanto, esprimendo $T_g$ in funzione di $T_m$, si ricava la **funzione di risposta in frequenza** tra misura (sonda) e misurando:
+
+$$
+H(j\omega) = \frac{1}{\tau_1 \tau_2 (j \omega)^2 + (\tau_1 + \tau_2)j\omega + 1}.
+$$
+
+Riguardo alla risposta allo scalino da $T_i$ a $T_f$ nelle condizioni di $\tau_1 > \tau_2$, si modella il gradino come segue, traslato di $T_i$:
+
+\begin{aligned}
+T_m(t) = T_i + (T_f - T_i)\,\text{sca}(t) &\overset{T_i = \text{cost}}{\Leftrightarrow} \vartheta_m(t) := T_m(t) - T_i = (T_f - T_i)\,\text{sca}(t) \\
+&\overset{\mathcal{L}}{\longrightarrow} \Theta_m(s) = (T_f - T_i)\frac{1}s .
+\end{aligned}
+
+Si definisce anche l'uscita traslata di $T_i$:
+
+$$
+\vartheta_s(t) := T_s(t) - T_i \overset{\mathcal{L}}{\longrightarrow} \Theta_s(s).
+$$
+
+In virtù della natura LTI del sistema, la risposta allo scalino nel dominio della frequenza è pari a
+
+$$
+\Theta_s(s) = H(s) \cdot (T_f - T_i)\frac{1}s.
+$$
+
+Mediante la scomposizione per fratti semplici e poi anti-trasformando, si ottiene la **risposta nel dominio nel tempo**:
+
+$$
+T_s(t) = T_f + (T_i+T_f) \cdot \left( \frac{\tau_1}{\tau_1 - \tau_2} e^{-\frac{t}{\tau_1}} - \frac{\tau_2}{\tau_1 - \tau_2} e^{-\frac{t}{\tau_2}} \right) .
+$$
+
+# Segnale campionato
+
+Il **set di dati** è disponibile a questo [link](datiPT100_2005Taratura.txt).
+
+```{r}
+df <- read.table("datiPT100_2005Taratura.txt", header=FALSE, sep="\t", dec=",", stringsAsFactors=FALSE)
+colnames(df) <- c("t", "temp", "temp_f")
+
+df <- df %>% dplyr::filter(t >= 150) %>% select(-temp_f) %>%
+  mutate(t = t - 150)
+
+df %>% plot_ly(x = ~t, y = ~temp) %>%
+  add_lines() %>% 
+  layout(xaxis = list(title="Tempo (s)"), yaxis = list(title="Temperatura (°C)"), title="Segnale di temperatura campionato")
+```
+
+```{r eval=FALSE, include=FALSE}
+df %>% ggplot(aes(x = t, y = temp)) +
+  geom_line(color = "#F8766D") +
+  labs(x="Tempo (s)", y="Temperatura (°C)")
+```
+
+```{r}
+# Verificato campionamento regolare con media e sd
+fs <- 1/(df$t[2]-df$t[1]) # freq. di campionamento
+Ta <- max(df$t) # tempo di acquisizione: primo istante a 0 sec
+```
+
+Parametri di campionamento (regolare):
+
+* $f_s =`r round(fs, 2)`\,\mathrm{Hz}$
+
+* $T_a =`r round(Ta, 2)`\,\mathrm{s}$
+
+# Taratura costanti $\tau_1$ e $\tau_2$
+
+```{r}
+t0 <- 28                        # soglia temporale tra plateau e transizione
+Ti <- mean(df$temp[df$t < t0])
+Tf <- 82                        # attribuito visivamente
+
+# Modello fisico: risposta allo scalino
+temperature <- function(t, t0, Ti, Tf, tau1, tau2) {
+  ifelse(
+    t < t0,
+    Ti,
+    Tf + (Ti-Tf)*(
+      tau1/(tau1-tau2)*exp( - (t-t0)/tau1 ) -
+      tau2/(tau1-tau2)*exp( - (t-t0)/tau2 )
+    )
+  )
+}
+
+df.nls <- nls(temp ~ temperature(t, t0, Ti, Tf, tau1, tau2),
+              data = df, start = list(tau1 = 30, tau2=25)
+            )
+summary(df.nls)
+```
+
+```{r}
+df <- df %>% add_predictions(df.nls) %>% add_residuals(df.nls)
+
+p1 <- df %>% ggplot(aes(x = t)) +
+  geom_line(aes(y = temp)) +
+  geom_line(aes( y = pred), color = "red") +
+  labs(x="Tempo (s)", y="Temperatura (°C)")
+
+p2 <- df %>% ggplot(aes(x = t, y = resid)) +
+  geom_point() +
+  geom_vline(xintercept = as.numeric(coef(df.nls)[1]), color = "orange", linetype = 2) +
+  labs(x="Tempo (s)", y="Residui (°C)")
+
+p1+p2
+```
+
+Osservando i **residui**, è evidente un **pattern** di questi durante la fase di transizione che suggerisce un **underfitting** dei dati. Questo potrebbe essere sintomo che il modello fisico ipotizzato non sia adeguato. Peraltro, i parametri regrediti suggeriscono un **comportamento predominante** dalla costante di tempo $\tau_1$.
+
+Tuttavia, graficamente è chiaro come la regressione `nls` segua bene le misure sperimentali e comunque si parla di una dispersione dei residui di circa $\pm1 \,\mathrm{°C}$.
+
+```{r eval=FALSE, include=FALSE}
+temperature2 <- function(t, t0, Ti, Tf, tau1) {
+  ifelse(
+    t < t0,
+    Ti,
+    Tf + (Ti-Tf)*(exp(-(t-t0)/tau1))
+  )
+}
+
+df.nls_tau <- nls(temp ~ temperature2(t, t0, Ti, Tf, tau1),
+              data = df, start = list(tau1 = 30)
+            )
+summary(df.nls_tau)
+
+df %>% add_predictions(df.nls_tau) %>% 
+  ggplot(aes(x = t)) +
+  geom_line(aes(y = temp)) +
+  geom_line(aes( y = pred), color = "red") +
+  labs(x="Tempo (s)", y="Temperatura (°C)")
+
+df %>% add_residuals(df.nls_tau) %>% ggplot(aes(x = t, y = resid)) +
+  geom_point() +
+  geom_vline(xintercept = as.numeric(coef(df.nls)[1]), color = "orange", linetype = 2) +
+  labs(x="Tempo (s)", y="Residui (°C)")
+```
+
+# Taratura su tutti i parametri
+
+```{r}
+params <- list(t0 = t0,
+               Ti = Ti,
+               Tf = Tf,
+               tau1 = as.numeric(coef(df.nls)[1]),
+               tau2 = as.numeric(coef(df.nls)[2])
+            )
+
+df.nls2 <- nls(temp ~ temperature(t, t0, Ti, Tf, tau1, tau2),
+               data = df, start = params)
+summary(df.nls2)
+```
+
+```{r}
+df <- df %>% add_predictions(df.nls2) %>% add_residuals(df.nls2)
+
+p1 <- df %>% ggplot(aes(x = t)) +
+  geom_line(aes(y = temp)) +
+  geom_line(aes( y = pred), color = "red") +
+  labs(x="Tempo (s)", y="Temperatura (°C)")
+
+p2 <- df %>% ggplot(aes(x = t, y = resid)) +
+  geom_point() +
+  geom_vline(xintercept = as.numeric(coef(df.nls2)[1]), color = "orange", linetype = 2) +
+  labs(x="Tempo (s)", y="Residui (°C)")
+
+p1+p2
+```
+
+Anche in questo caso i residui continuano a mostrare un determinato andamento nella fase di transizione, ma visivamente la regressione si ben adatta alle misure sperimentali.
+
+```{r eval=FALSE, include=FALSE}
+# Paragone con singola tau
+
+temperature2 <- function(t, t0, Ti, Tf, tau1) {
+  ifelse(
+    t < t0,
+    Ti,
+    Tf + (Ti-Tf)*(exp(-(t-t0)/tau1))
+  )
+}
+
+df.nls_tau <- nls(temp ~ temperature2(t, t0, Ti, Tf, tau1),
+              data = df, start = list(tau1 = 30)
+            )
+
+df %>% rename(pred_nls = pred) %>%
+  add_predictions(df.nls_tau) %>%
+  pivot_longer(cols = c("pred_nls", "pred")) %>%
+  ggplot(aes(x=t, y=value, colour=name)) +
+  geom_line(aes(y=temp), color="black") +
+  geom_line() +
+  scale_color_discrete(labels=c(pred = latex2exp::TeX("Con $\\tau_1$"), pred_nls = latex2exp::TeX("Con $\\tau_1$ e $\\tau_2$"))) +
+  labs(x = "Tempo (s)", y = "Temperatura (°C)", colour = "Modello")
+```
+
+```{r eval=FALSE, include=FALSE}
+df %>% add_predictions(df.nls_tau) %>% 
+  ggplot(aes(x = t)) +
+  geom_line(aes(y = temp)) +
+  geom_line(aes( y = pred), color = "red") +
+  labs(x="Tempo (s)", y="Temperatura (°C)")
+
+df %>% add_residuals(df.nls_tau) %>% ggplot(aes(x = t, y = resid)) +
+  geom_point() +
+  geom_vline(xintercept = as.numeric(coef(df.nls)[1]), color = "orange", linetype = 2) +
+  labs(x="Tempo (s)", y="Residui (°C)")
+```
+
+
+# Intervallo di confidenza dei parametri
+
+L'intervallo di confidenza (IC) viene calcolato al $95\%$: ossia è quell'intervallo al quale i parametri regrediti appartengono con tale probabilità.
+
+```{r}
+# Funzione che calcola i parametri di nls ad ogni ripetizione 
+# per questa ragione sono delle statistiche
+stats <- function(temp, data) {
+  fit <- nls(temp ~ temperature(t, t0, Ti, Tf, tau1, tau2), 
+             data = data, start = params)
+  return(fit$m$getPars())
+}
+
+# Bootstrap NON parametrico (con reinserimento di default)
+df.b <- boot(df, \(x,i) stats(x[i, "temp"], x[i,]), R=10^4)
+
+df.b
+```
+
+È verificato che le stime regredite coincidono con la regressione precedente, per cui si accetta il calcolo senza ulteriori dimostrazioni (e.g. un grafico QQ di ciascun parametro per capire se il numero di ripetizioni $R$ è adeguato).
+
+```{r}
+# Intervallo di confidenza al 95% (metodo percentile)
+ci <- list(
+  t0 = boot.ci(df.b, type = "perc", index = 1)$percent[4:5],
+  Ti = boot.ci(df.b, type = "perc", index = 2)$percent[4:5],
+  Tf = boot.ci(df.b, type = "perc", index = 3)$percent[4:5],
+  tau1 = boot.ci(df.b, type = "perc", index = 4)$percent[4:5],
+  tau2 = boot.ci(df.b, type = "perc", index = 5)$percent[4:5]
+)
+```
+
+Graficando l'IC, si mostra quanto sia incerta la stima della curva regredita.
+
+Interessanti sono gli IC relativi a $t_0, T_i$ e $T_f$.
+
+```{r echo=FALSE}
+params <- list(
+  t0 = as.numeric(df.b$t0[1]),
+  Ti = as.numeric(df.b$t0[2]),
+  Tf = as.numeric(df.b$t0[3]),
+  tau1 = as.numeric(df.b$t0[4]),
+  tau2 = as.numeric(df.b$t0[5])
+)
+
+df %>% ggplot(aes(x=t)) +
+  geom_rect(aes(xmin=ci$t0[1], xmax=ci$t0[2], ymin=-Inf, ymax=Inf), fill=gray(0.8)) +
+  geom_rect(aes(xmin=-Inf, xmax=Inf, ymin=ci$Ti[1], ymax=ci$Ti[2]), fill=gray(0.8)) +
+  geom_rect(aes(xmin=-Inf, xmax=Inf, ymin=ci$Tf[1], ymax=ci$Tf[2]), fill=gray(0.8)) +
+  geom_line(aes(y=temp)) +
+  geom_line(aes(y=pred), color = "red") +
+  geom_vline(xintercept = params$t0, color = "orange", linewidth = .25, linetype=2) +
+  geom_hline(yintercept = params$Ti, color = "orange", linewidth = .25, linetype=2) +
+  geom_hline(yintercept = params$Tf, color = "orange", linewidth = .25, linetype=2) +
+  labs(x="Tempo (s)", y="Temperatura (°C)")
+  
+```
+
+Mentre su tutta la curva, combinando i diversi IC, si ottiene:
+
+```{r}
+# Funzione che calcola l'estremo alto o basso dell'IC
+# per ogni possibile combinazione degli estremi di IC
+# di ciascun parametro
+f_conf <- function(t, temperature, ci, upper=TRUE) {
+  df <- expand.grid(ci)       # ogni possibile combinazione di IC
+  df$temp <- with(df, temperature(t, t0, Ti, Tf, tau1, tau2))
+  ifelse(upper, max(df$temp), min(df$temp))
+}
+
+df %>% mutate(
+  lower = map_dbl(t, ~f_conf(., temperature, ci, upper=FALSE)),
+  upper = map_dbl(t, ~f_conf(., temperature, ci))
+) %>% ggplot(aes(x=t)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill="blue", alpha=.5) +
+  geom_line(aes(y=temp)) +
+  geom_line(aes(y=pred), color="red") +
+  labs(x="Tempo (s)", y="Temperatura (°C)")
+```
+
+Si osserva come l’incertezza nella fase di transizione risulti più ampia, verosimilmente riconducibile alla stima di $\tau_1$ e $\tau_2$. Tale comportamento può indicare una parziale inadeguatezza del modello fisico adottato oppure una difficoltà di `nls` nel raggiungere una soluzione ottimale.
+
+
+
