@@ -162,7 +162,7 @@ compute_fft(y, Ta, yn) %>% dplyr::filter(f < 2.5) %>%
   ggplot(aes(x = f, y = mod)) +
   geom_spoke(aes(angle = pi/2, y=0, radius = mod), linewidth = 0.2, colour = "#56B4E9") +
   geom_point(colour = "#56B4E9") +
-  labs(x = "Frequenza (Hz)", y = "Intensità")
+  labs(x = "Frequenza (Hz)", y = "Intensità", title = "Spettro dell'uscita con rumore")
 ```
 
 ```{r}
@@ -201,93 +201,151 @@ y %>% pivot_longer(cols = c("y_n", "y_flt")) %>%
   labs(x = "Tempo (s)", y="Output", colour = "Segnale")
 ```
 
+```{r}
+# Windowing perché segnale complessivo non periodico -> FFT non funziona
+N <- length(y$t)
+y <- y %>% mutate(
+  win = signal::hanning(N),
+  y_win = y_flt * win
+)
+
+y %>% pivot_longer(cols = c("y_win", "y_flt")) %>% 
+  ggplot(aes(x = t, y = value, colour = name)) +
+  geom_line() +
+  geom_line(aes(y=win), color = "red", linetype = 22) +
+  geom_line(aes(y=-win), color = "red", linetype = 22) +
+  scale_color_discrete(labels = c(y_win = "Windowing", y_flt = "Filtrata")) +
+  labs(x = "Tempo (s)", y="Output", colour = "Segnale")
+```
+
 
 [ChatGPT] Per chiarezza e per evitare errori numerici, viene calcolata esplicitamente la funzione di risposta in frequenza, anziche usare la `freqresp`.
 
 ```{r}
 # Trasformata di Fourier (FFT)
 y <- y %>% mutate(
-  Y =fft(y_flt)
+  Y =fft(y_flt),
+  Y_win = fft(y_win)
 )
 
 # Asse frequenze
-f <- (0:(length(y$t)-1))/Ta
-w <- 2*pi*f  
+freq <- tibble(
+  k = 0:(N-1),
+  f = ifelse(k <= N/2, k, k-N) * fs/N,   # FFT simmetrica nell'asse delle freq.
+  w = 2*pi*f
+)
 
-# Rispostan in frequenza e sua inversa
-Hiw <- freqresp(H, w)
-Hiw_inv <- Conj(Hiw)/(Mod(Hiw)) # inverso di un numero complesso
+# Calcolo della funz. di risposta in frequenza
+Hiw <- freqresp(H, freq$w)
 ```
 
 ```{r}
 # Inverto la caratteristica dinamica e anti-trasformo
 u_comp <- tibble(
   t = y$t,
-  U = Hiw_inv * y$Y,
-  u = Re(fft(U, inverse = TRUE)) / length(t) # Re() serve a trascurare dei residui di calcolo nella parte Im 
+  U = y$Y / Hiw,
+  U_win = y$Y_win / Hiw,
+  u = Re(fft(U, inverse = TRUE)) / N,
+  u_win = Re(fft(U_win, inverse = TRUE)) / N # Re() serve a trascurare dei residui di calcolo nella parte Im 
   # la fft(inverse = TRUE) ritorna l'inversa NON-normalizzata, perciò si divide per la lunghezza del campione
 )
 ```
 
 ```{r}
 
-u_comp %>% plot_ly(x = ~t) %>%
-  add_lines(y = u$un[u$t <= Ta], name = "Reale") %>%
-  add_lines(y = u$u[u$t <= Ta], name = "Ideale") %>%
-  add_lines(y = ~u, name = "Compensato") #%>% add_lines(y = y$y_n, name = "Uscita")
-```
-
-
-ho amplificazione e fase introdotta dal processo di compensazione.
-
-Supponendo di dover tarare lo strumento di misura, considero il segnale di input (misurando) come riferimento. Perciò posso effetuare le seguenti operazioni per sopperire ai problemi di sfasamento e ampiezza. Nello specifico considero il riferimento ideale.
-
-[Suggerimento ChatGPT]
-
-Ritardo mediante la cross-correlazione tra i due segnali: trovo il lag per il quale ho la massima correlazione (in cui i segnali si somigliano di più)
-
-```{r}
-lag <- which.max(ccf(u$u, u_comp$u, plot = FALSE)$acf)
-```
-
-```{r}
-cc <- ccf(u$u, u_comp$u, plot = FALSE)
-lag_samples <- cc$lag[ which.max(cc$acf) ]
-```
-
-```{r}
-shift_signal <- function(x, k) {
-  n <- length(x)
-  if (k > 0) {
-    c(rep(NA, k), x[1:(n - k)])
-  } else if (k < 0) {
-    k <- abs(k)
-    c(x[(k + 1):n], rep(NA, k))
-  } else {
-    x
-  }
-}
-
-```
-
-```{r}
-u_comp$u_aligned <- shift_signal(u_comp$u, +lag_samples)
-```
-
-```{r}
-u_comp %>% plot_ly(x = ~t) %>%
+u_comp %>% plot_ly(x = ~t) %>% #add_lines(y = y$y_n, name = "Uscita") %>%
   add_lines(y = u$un[u$t <= Ta], name = "Reale") %>%
   add_lines(y = u$u[u$t <= Ta], name = "Ideale") %>%
   add_lines(y = ~u, name = "Compensato") %>%
-  add_lines(y = ~u_aligned, name = "Allineato") #%>% add_lines(y = y$y_n, name = "Uscita")
+  add_lines(y = ~u_win, name = "Windowing")
 ```
 
 
-Proposte di soluzione:
+## Provo con padding simmetri a zero [ChatGPT]
 
-- ritardo: shift con X-cor -> c'ho provato ma non facile e mi viene sbagliato
+```{r}
+# Ampiezza padding
+M <- 4*N
 
-- ampiezza: è l'inversa della funzione che causa questo, si dovrebbe compensare nel dominio della freqeunza -> modificare la funz di trasf (inversa)
+pad_left  <- floor((M - N)/2)
+pad_right <- ceiling((M - N)/2)
+
+t_start <- y$t[1] - pad_left * Ts
+y_ext <- tibble(
+  t = seq(from = t_start, by = Ts, length.out = M),
+  y_pad = c(
+    rep(0, pad_left),
+    y$y_flt,
+    rep(0, pad_right)
+  )
+)
+
+# Verifica che il segnale sia centrato: deve restituire TRUE
+all.equal(
+  y_ext$y_pad[(pad_left+1):(pad_left+N)],
+  y$y_flt
+)
+
+y_ext %>%
+  ggplot(aes(t, y_pad)) +
+  geom_line() +
+  geom_line(data = y, aes(x = t, y = y_n), color = "red")
+
+```
+
+```{r}
+freq <- tibble(
+  k = 0:(M-1),
+  f = ifelse(k <= M/2, k, k-M) * fs/M,   # FFT simmetrica nell'asse delle freq.
+  w = 2*pi*f
+)
+
+Hiw <- freqresp(H, freq$w)
+
+y_ext <- y_ext %>% mutate(
+  Y_pad = fft(y_pad),
+  U_pad = Y_pad/Hiw,
+  u_pad = Re(fft(U_pad, inverse = TRUE)) / M
+)
+
+u_comp <- u_comp %>% mutate(
+  u_pad = y_ext$u_pad[(pad_left+1):(pad_left+N)]
+)
+```
+
+```{r}
+u_comp %>% plot_ly(x = ~t) %>% #add_lines(y = y$y_n, name = "Uscita") %>%
+  add_lines(y = u$un[u$t <= Ta], name = "Reale") %>%
+  add_lines(y = u$u[u$t <= Ta], name = "Ideale") %>%
+  add_lines(y = ~u, name = "Compensato") %>%
+  add_lines(y = ~u_win, name = "Windowing") %>%
+  add_lines(y = ~u_pad, name = "Padded")
+```
+
+Applico un filtro sul segnale padded:
+
+```{r}
+compute_fft(u_comp, Ta, u_pad) %>% dplyr::filter(f < 2) %>%
+  ggplot(aes(x = f, y = mod)) +
+  geom_spoke(aes(angle = pi/2, y=0, radius = mod), linewidth = 0.2, colour = "#56B4E9") +
+  geom_point(colour = "#56B4E9") +
+  labs(x = "Frequenza (Hz)", y = "Intensità", title = "Spettro dell'ingresso compensato")
+```
+
+```{r}
+fc <- 2
+flt <- butter(2, 2*fc/fs)
+
+u_comp <- u_comp %>% mutate(
+  u_flt = signal::filtfilt(flt, u_pad)
+)
+
+u_comp %>% plot_ly(x = ~t) %>% 
+  add_lines(y = u$un[u$t <= Ta], name = "Reale") %>%
+  add_lines(y = u$u[u$t <= Ta], name = "Ideale") %>%
+  add_lines(y = ~u_pad, name = "Padded") %>%
+  add_lines(y = ~u_flt, name = "Filtered")
+```
 
 
-
+ora accetto il risultato

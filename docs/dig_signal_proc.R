@@ -36,6 +36,7 @@ compute_fft <- function(df, Ta, name_sig, monolateral = TRUE) {
   N <- nrow(df)
   
   df <- df %>% mutate(
+    n = row_number(),
     f = n/Ta,
     fft = fft({{ name_sig }}),
     mod = ifelse(monolateral, (2-(f==0)), 1) * Mod(fft) / length(n),
