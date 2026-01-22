@@ -107,13 +107,10 @@ bind_rows(
   geom_spoke(aes(angle = pi/2, y=0, radius = mod), linewidth = 0.2, colour = "#F8766D") +
   geom_point(colour = "#F8766D") +
   facet_wrap(~ caso, ncol = 1, scales = "free_x") +
-  labs(
-    x = "Frequenza (Hz)",
-    y = "Intensità"
-  )
+  labs(x = "Frequenza (Hz)", y = "Intensità")
 ```
 
-**NB**: non si vede, ma il rumore bianco è presente. Provare ad ingrandire la dev. std. del rumore addizionato a `un`.
+**NB**: non si vede, ma il rumore bianco è presente. Provare ad ingrandire la `sd` del rumore addizionato a `un`.
 
 # Stima del misurando a partire dal segnale di uscita
 
@@ -146,19 +143,26 @@ TF2SS: The order of the Numerator should be equal or lesser than the Denominator
 Implementazione della compensazione dinamica.
 :::
 
-Il problema risiede nel fatto che la funzione `lsim` è progettata per calcolare la risposta nel tempo di un sistema LTI proprio ($deg(\text{NUM}) \leq deg(\text{DEN})$). Nel caso dell'inversa $H^{-1}(j\omega)$, è come se si stimasse la risposta di un sistema improprio, per cui `lsim` fallisce.
+Il problema risiede nel fatto che la funzione `lsim` è progettata per calcolare la risposta nel tempo di un **sistema LTI proprio** ($deg(\text{NUM}) \leq deg(\text{DEN})$). Nel caso dell'inversa $H^{-1}(j\omega)$, è come se si stimasse la risposta di un sistema improprio, per cui `lsim` fallisce.
 
-Risolvo elaborando tutto nel dom della freq e poi antitrasformo.
+La soluzione impiegata è quella di **calcolare numericamente il misurando nel dominio della frequenza, dopodiché mediante l'anti-trasformata si trova il rispettivo segnale nel tempo**. Pertanto, i passaggi da effetuare saranno:
+
+1. trasformare l'uscita nel dominio della frequenza;
+2. calcolare la risposta in frequenza della FdT;
+3. calcolare il misurando invertendo la caratteristica dinamica: $U(j\omega) = \frac{Y(j\omega)}{H(j\omega)}$;
+4. anti-trasformare per ottenere $u(t)$.
 
 ```{r}
-# filtro l'uscita per ridurre il rumore
+# Filtraggio dell'uscita per ridurre il rumore
 y <- u %>% select(t) %>% mutate(n = row_number(t), .before = t) %>%
   mutate(
     y_id = yI,
     y_n = yn
   )
 
-compute_fft(y, Ta, yn) %>% dplyr::filter(f < 2.5) %>%
+tmp <- compute_fft(y, Ta, yn)
+
+tmp %>% dplyr::filter(f < 2.5) %>%
   ggplot(aes(x = f, y = mod)) +
   geom_spoke(aes(angle = pi/2, y=0, radius = mod), linewidth = 0.2, colour = "#56B4E9") +
   geom_point(colour = "#56B4E9") +
@@ -166,11 +170,11 @@ compute_fft(y, Ta, yn) %>% dplyr::filter(f < 2.5) %>%
 ```
 
 ```{r}
-# filtro a 1Hz
+# Filtro Butterworth con taglio a 1Hz
 fc <- 1
 flt <- butter(2, fc/(fs/2))
 
-ggbodeplot_digital(flt, fs, fmin = 1e-1, fmax = 1e1) + geom_vline(xintercept = fc, color="red", linetype = 2)
+#ggbodeplot_digital(flt, fs, fmin = 1e-1, fmax = 1e1) + geom_vline(xintercept = fc, color="red", linetype = 2)
 
 y <- y %>% mutate(y_flt = signal::filtfilt(flt, yn))
 ```
@@ -181,11 +185,13 @@ y %>% pivot_longer(cols = c("y_n", "y_flt")) %>%
   ggplot(aes(x = t, y = value, colour = name)) +
   geom_line() +
   scale_color_discrete(labels = c(y_n = "Con rumore", y_flt = "Filtrata")) +
-  labs(x = "Tempo (s)", y="Output", colour = "Segnale")
+  labs(x = "Tempo (s)", y="", colour = "Output")
 ```
 
 ```{r}
-# per padding automatico di filtfilt ho una distorsione, perciò taglio il segnale di uscita
+# `filtfilt` effettua di default un padding ai bordi del segnale,
+# introducendo una distorsione nella coda destra.
+# Perciò viene tagliata tale coda
 y <- y %>% dplyr::filter(t <= 99)
 
 # Nuovo tempo di campionamento
@@ -201,76 +207,121 @@ y %>% pivot_longer(cols = c("y_n", "y_flt")) %>%
   labs(x = "Tempo (s)", y="Output", colour = "Segnale")
 ```
 
-```{r}
-# Windowing perché segnale complessivo non periodico -> FFT non funziona
-N <- length(y$t)
-y <- y %>% mutate(
-  win = signal::hanning(N),
-  y_win = y_flt * win
-)
+Si osservi come la **banda utile** dell'uscita si sovrapponga alla **banda di stabilità** della FdT inversa. Questo darà la garanzia che il rumore ad alta frequenza non venga amplificato.
 
-y %>% pivot_longer(cols = c("y_win", "y_flt")) %>% 
-  ggplot(aes(x = t, y = value, colour = name)) +
-  geom_line() +
-  geom_line(aes(y=win), color = "red", linetype = 22) +
-  geom_line(aes(y=-win), color = "red", linetype = 22) +
-  scale_color_discrete(labels = c(y_win = "Windowing", y_flt = "Filtrata")) +
-  labs(x = "Tempo (s)", y="Output", colour = "Segnale")
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+x0 <- tmp %>%
+  dplyr::filter(f > 0.25) %>%
+  slice_max(mod, n = 1) %>%
+  pull(f)
+
+
+ggbodeplot_continous(Hinv, fs, fmin = 1e-3) +
+  annotate("rect", xmin = 0, xmax = x0, ymin = -Inf, ymax = Inf, fill = "#56B4E9", alpha = 0.15)
 ```
 
-
-[ChatGPT] Per chiarezza e per evitare errori numerici, viene calcolata esplicitamente la funzione di risposta in frequenza, anziche usare la `freqresp`.
-
 ```{r}
-# Trasformata di Fourier (FFT)
-y <- y %>% mutate(
-  Y =fft(y_flt),
-  Y_win = fft(y_win)
-)
+N <- length(y$t)
 
 # Asse frequenze
 freq <- tibble(
   k = 0:(N-1),
-  f = ifelse(k <= N/2, k, k-N) * fs/N,   # FFT simmetrica nell'asse delle freq.
+  f = ifelse(k <= N/2, k, k-N) * fs/N,   # FFT simmetrica all'asse delle freq.
   w = 2*pi*f
 )
+
+# Trasformata di Fourier (FFT)
+y <- y %>% mutate(Y =fft(y_flt))
 
 # Calcolo della funz. di risposta in frequenza
 Hiw <- freqresp(H, freq$w)
 ```
 
 ```{r}
-# Inverto la caratteristica dinamica e anti-trasformo
+# Inversione della caratteristica dinamica e anti-trasformata
 u_comp <- tibble(
   t = y$t,
   U = y$Y / Hiw,
-  U_win = y$Y_win / Hiw,
-  u = Re(fft(U, inverse = TRUE)) / N,
-  u_win = Re(fft(U_win, inverse = TRUE)) / N # Re() serve a trascurare dei residui di calcolo nella parte Im 
-  # la fft(inverse = TRUE) ritorna l'inversa NON-normalizzata, perciò si divide per la lunghezza del campione
+  u = Re(fft(U, inverse = TRUE)) / N  # Re() serve a trascurare dei residui di calcolo nella parte Im. 
+                                      # La fft(inverse = TRUE) ritorna l'inversa NON-normalizzata, 
+                                      # perciò si divide per la lunghezza del campione
 )
 ```
 
-```{r}
-
-u_comp %>% plot_ly(x = ~t) %>% #add_lines(y = y$y_n, name = "Uscita") %>%
+```{r echo=FALSE}
+u_comp %>% plot_ly(x = ~t) %>%
   add_lines(y = u$un[u$t <= Ta], name = "Reale") %>%
   add_lines(y = u$u[u$t <= Ta], name = "Ideale") %>%
   add_lines(y = ~u, name = "Compensato") %>%
-  add_lines(y = ~u_win, name = "Windowing")
+  layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = ""), title = "Input compensato")
+```
+
+Il risultato ottenuto è molto buono nella parte centrale. Tuttavia, all'inizio si osserva una discrepanza tra i dati compensati e quelli desiderati e delle forti oscillazioni su entrambi i bordi. La ragione risiede nel fatto che la FFT assume che il **segnale sia periodico e campionato per un numero di cicli interi** ([Finestre](https://mmt-unitn.github.io/teoria.html#funzioni-di-trasferimento)), evitando discontinuità e non derivabilità ai bordi. Tali condizioni non sono soddisfatte in questo caso.
+
+Pertanto, si possono implementare due possibili soluzioni:
+
+* [**proposta da ChatGPT**] effetuare un'operazione di **finestratura** del segnale;
+* effettuare un **padding a zero** sulle code che impone la condizione $u(0) = u(T_a) = 0$.
+
+Prima si prova ad effettuare il *windowing*.
+
+```{r}
+# Windowing
+y <- y %>% mutate(
+  win = signal::hanning(N),
+  y_win = y_flt * win
+)
+```
+
+```{r echo=FALSE}
+
+y %>% pivot_longer(cols = c("y_win", "y_flt")) %>% 
+  ggplot(aes(x = t, y = value, colour = name)) +
+  geom_line() +
+  geom_line(aes(y=win), color = "red", linetype = 22) +
+  geom_line(aes(y=-win), color = "red", linetype = 22) +
+  scale_color_discrete(labels = c(y_win = "Windowing", y_flt = "Filtrato")) +
+  labs(x = "Tempo (s)", y="Output", colour = "Segnale")
 ```
 
 
-## Provo con padding simmetri a zero [ChatGPT]
+```{r}
+# Trasformata di Fourier (FFT)
+y <- y %>% mutate(Y_win = fft(y_win))
+
+# Calcolo della funz. di risposta in frequenza
+Hiw <- freqresp(H, freq$w)
+```
+
+```{r}
+# Inversione della caratteristica dinamica e anti-trasformata
+u_comp <- u_comp %>% mutate(
+  U_win = y$Y_win / Hiw,
+  u_win = Re(fft(U_win, inverse = TRUE)) / N
+)
+```
+
+```{r echo=FALSE}
+u_comp %>% plot_ly(x = ~t) %>%
+  add_lines(y = u$un[u$t <= Ta], name = "Reale") %>%
+  add_lines(y = u$u[u$t <= Ta], name = "Ideale") %>%
+  add_lines(y = ~u, name = "Compensato") %>%
+  add_lines(y = ~u_win, name = "Windowing") %>%
+  layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = ""), title = "Input compensato")
+```
+
+Si può concludere che l'operazione di finestratura non è la più ottimale: la ricostruzione del misurando risulta buona solo nel centro della finestra, risultato che era stato già ottenuto precedentemente, anzi anche migliore. Il fatto è che, nel caso di questa applicazione, si preferisce **ricostruire l'intero segnale di ingresso** e non solo una parte.
+
+## Padding simmetrico a zero
 
 ```{r}
 # Ampiezza padding
-M <- 4*N
+M <- 2*N
 
 pad_left  <- floor((M - N)/2)
 pad_right <- ceiling((M - N)/2)
-
 t_start <- y$t[1] - pad_left * Ts
+
 y_ext <- tibble(
   t = seq(from = t_start, by = Ts, length.out = M),
   y_pad = c(
@@ -281,19 +332,19 @@ y_ext <- tibble(
 )
 
 # Verifica che il segnale sia centrato: deve restituire TRUE
-all.equal(
-  y_ext$y_pad[(pad_left+1):(pad_left+N)],
-  y$y_flt
-)
+#all.equal(y_ext$y_pad[(pad_left+1):(pad_left+N)],y$y_flt)
+```
 
+```{r echo=FALSE}
 y_ext %>%
   ggplot(aes(t, y_pad)) +
   geom_line() +
-  geom_line(data = y, aes(x = t, y = y_n), color = "red")
-
+  labs(x = "Tempo (s)", y = "Segnale con padding")
 ```
 
+
 ```{r}
+# Nuovo asse delle frequenze
 freq <- tibble(
   k = 0:(M-1),
   f = ifelse(k <= M/2, k, k-M) * fs/M,   # FFT simmetrica nell'asse delle freq.
@@ -308,23 +359,26 @@ y_ext <- y_ext %>% mutate(
   u_pad = Re(fft(U_pad, inverse = TRUE)) / M
 )
 
+# Scarto delle code di padding
 u_comp <- u_comp %>% mutate(
   u_pad = y_ext$u_pad[(pad_left+1):(pad_left+N)]
 )
 ```
 
-```{r}
-u_comp %>% plot_ly(x = ~t) %>% #add_lines(y = y$y_n, name = "Uscita") %>%
+```{r echo=FALSE}
+u_comp %>% plot_ly(x = ~t) %>%
   add_lines(y = u$un[u$t <= Ta], name = "Reale") %>%
   add_lines(y = u$u[u$t <= Ta], name = "Ideale") %>%
   add_lines(y = ~u, name = "Compensato") %>%
   add_lines(y = ~u_win, name = "Windowing") %>%
-  add_lines(y = ~u_pad, name = "Padded")
+  add_lines(y = ~u_pad, name = "Padding") %>%
+  layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = ""), title = "Input compensato")
 ```
 
-Applico un filtro sul segnale padded:
+Questa volta il segnale compensato coincide molto bene con quello ideale. Ciononostante, si osserva ancora un **alto contenuto in frequenza nelle code**. Quest'ultimo viene eliminato mediante un'operazione di **filtraggio**.
 
 ```{r}
+# Verifico lo spettro del segnale
 compute_fft(u_comp, Ta, u_pad) %>% dplyr::filter(f < 2) %>%
   ggplot(aes(x = f, y = mod)) +
   geom_spoke(aes(angle = pi/2, y=0, radius = mod), linewidth = 0.2, colour = "#56B4E9") +
@@ -339,13 +393,25 @@ flt <- butter(2, 2*fc/fs)
 u_comp <- u_comp %>% mutate(
   u_flt = signal::filtfilt(flt, u_pad)
 )
+```
 
-u_comp %>% plot_ly(x = ~t) %>% 
+```{r echo=FALSE}
+u_comp %>% plot_ly(x = ~t) %>%
   add_lines(y = u$un[u$t <= Ta], name = "Reale") %>%
   add_lines(y = u$u[u$t <= Ta], name = "Ideale") %>%
-  add_lines(y = ~u_pad, name = "Padded") %>%
-  add_lines(y = ~u_flt, name = "Filtered")
+  add_lines(y = ~u_pad, name = "Padding") %>%
+  add_lines(y = ~u_flt, name = "Filtrato") %>%
+  layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = ""), title = "Input compensato")
 ```
 
 
-ora accetto il risultato
+Adesso si osserva che l'ingresso viene riprodotto fedelmente. Di seguito un confronto tra segnale di uscita e ingresso compensato:
+```{r echo=FALSE}
+y %>% select(t, y_n, y_flt) %>% mutate(u_flt = u_comp$u_flt) %>%
+  pivot_longer(-t) %>% mutate(name = factor(name, levels = c("y_n", "y_flt", "u_flt"))) %>%
+  ggplot(aes(x=t,y=value, colour=name)) +
+  geom_line() +
+  scale_color_discrete(label = c(y_n = "Output + rumore", y_flt = "Output filtrato", u_flt = "Input compensato")) +
+  labs(x="Tempo (s)", y="", colour="Segnale")
+```
+
