@@ -31,6 +31,8 @@ website:
             text: Esercitazione 3
           - href: ex4.html
             text: Esercitazione 4
+          - href: ex5.html
+            text: Esercitazione 5
 
 format:
   html:

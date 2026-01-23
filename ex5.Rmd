@@ -1,0 +1,260 @@
+---
+title: "Esercitazione 5"
+subtitle: "Inversione delle armoniche pure"
+author: "Paolo Rossi, 235651"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+
+library(signal)
+library(control)
+
+source("graphics.R")
+source("dig_signal_proc.R")
+```
+
+Per la consegna dell'esercitazione si faccia riferimento a questo [link](https://mmt-unitn.github.io/EsercitazioniCasaDARE/DARE_4_Inv_armoniche_pure%20v2.html#parte-fornita-per-lesercitazione). Mentre le librerie sono rimandate nell'icona `Librerie`.
+
+# Funzioni
+
+```{r}
+# FUNZIONE: Generazione segnale sinusoidale con diverse armoniche
+signal <- function(t, pars, rad = FALSE) { 
+  stopifnot(is.data.frame(pars))
+  with(pars, {
+    if (!rad) {
+      phi <- phi/180*pi
+      f <- 2*pi*f
+    }
+    map_dbl(t, \(t) sum( map_vec(seq_along(w) , \(i) w[i]*cos(t*f[i] + phi[i] ))))
+  })
+}
+```
+
+# Segnale d'ingresso
+
+```{r}
+f0 <- 10
+
+# Provare con un'armonica pura
+# pars <- tibble(
+#   w = c(1),
+#   f = c(f0),  # 1 funziona
+#   phi = c(0)
+# )
+
+# Provare con tante armoniche
+pars <- tibble(
+  w = c(1, 0.1, 0.3),
+  f = c(15, 20, 45),
+  phi = c(0, 0, 0)
+)
+
+N <- 1000   # dimensione del campione
+fs <- 1000  # freq. di campionamento
+
+s <- tibble(
+  t = 0:N / fs, # 1 kHz di frequenza di campionamento
+  u = signal(t, pars), 
+  u_n = u + rnorm(length(t), 0, pars$w[1] / 10)
+)
+```
+
+```{r}
+spectrum_fft(s, fs, "u_n") %>% ggplot(aes(x = f, y = mod)) +
+  geom_spoke(aes(y=0, radius = mod, angle = pi/2)) +
+  geom_point() +
+  labs(x = "Frequenza (Hz)", y = "Intensità")
+```
+
+# FdT del sistema di isolamento
+
+```{r}
+M <- 10
+K <- 1000
+C <- 50
+
+# Frequenza naturale:
+fn <- 1/(2*pi) * sqrt(K/M)
+
+num <- c(C, K)
+den <- c(M, C, K)
+
+H <- tf(num, den)
+
+ggbodeplot_continous(H, fs, fmin=0.1, fmax=100) +
+  geom_vline(xintercept=c(1, sqrt(2)) * fn, color="red", linetype=2) +
+  labs(title=paste(
+    "Natural frequency:", round(fn, 2), "Hz",
+    " - Isolation: >", round(sqrt(2)*fn, 2), "Hz"))
+```
+
+# Simulazione dell'uscita
+
+```{r}
+output <- lsim(H, s$u_n, s$t)
+s <- s %>% 
+  mutate(
+    # Simulazione dell'uscita
+    y = output$y[1,]
+  )
+
+# Grafici
+plot_ly() %>%
+  add_lines(x = s$t, y = s$u_n, name = "Input") %>%
+  add_lines(x = s$t, y = s$y, name = "Output") %>%
+  layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = ""), title = "Input & Output")
+```
+
+# Ricostruzione dell'ingresso
+
+:::{.exam-points}
+Stima dell'ingresso a partire da uscita del sistema e da modulo e fase della FdT.
+:::
+
+R è in grado di operare nel **domino complesso**, perciò viene effettuata la compensazione dell'ingresso nel dominio della frequenza, come in [Esercitazione 4](ex4.Rmd). Nello specifico, mediante la funzione di libreria [`dyn_compensation`](dig_signal_proc.R) vengono essenzialmente svolti i segueni passaggi, presupponendo un'opportuno segnale d'uscita passatogli come parametro:
+
+1. eventuale *padding*, impostato dall'utente, per garantire la completa periodicità del segnale;
+
+2. calcolo dalla FFT del segnale d'uscita e valutazione numerica della risposta in frequenza della FdT;
+
+3. inversione della caratteristica dinamica;
+
+4. FFT inversa che calcola l'ingresso nel dominio del tempo.
+
+Per effettuare la compensazione, è bene prendere atto che l'FdT inversa è un **passa-alto**:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggbodeplot_continous(tf(den, num), fs, fmin = 1e-1, fmax=1e2) +
+  geom_vline(xintercept=c(1, sqrt(2)) * fn, color="red", linetype=2) +
+  labs(title=paste(
+    "Natural frequency:", round(fn, 2), "Hz",
+    " - Amplification: >", round(sqrt(2)*fn, 2), "Hz")
+  )
+```
+
+Sulla base dei diagrammi di bode ed osservando lo spettro dell'uscita che segue, è evidente che le componenti oltre i $`r round(sqrt(2)*fn, 2)`\,\mathrm{Hz}$ verranno **amplificate**. 
+
+```{r}
+y <- s %>% dplyr::select(t, y) 
+
+spectrum_fft(y, name_sig = "y") %>% dplyr::filter(f < 100) %>%
+  ggplot(aes(f, mod)) +
+  geom_spoke(aes(y = 0, radius = mod, angle = pi/2), color = "#56B4E9") +
+  geom_point(color = "#56B4E9") +
+  geom_vline(xintercept = sqrt(2)*fn, linetype = 2, color = "red") +
+  labs(x = "Frequenza (Hz)", y = "Intensità", title = "Spettro dell'output")
+```
+
+A questo punto viene effettuata la compensazione:
+
+```{r}
+# Compensazione dell'uscita
+u <- s %>% select(t, u, u_n) %>%
+  mutate(
+    u_comp = dyn_compensation(y, H, name_sig = "y")$u
+  )
+```
+
+```{r echo=FALSE}
+u %>%
+  plot_ly(x = ~t) %>%
+  add_lines(y = y$y, name = "Output") %>%
+  add_lines(y = ~u, name = "Ideale") %>%
+  add_lines(y = ~u_comp, name = "Compensato") %>%
+  layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = ""), title = "Input compensato")
+```
+
+Come anticipato l'inversione della FdT comporta la ricostruzione di un segnale **abbastanza rumoroso**. Per comprendere il tipo di rumore e quali componenti lo costituiscano si osserva lo spettro del segnale.
+
+```{r}
+spectrum_fft(u, name_sig = "u_comp") %>% 
+  ggplot(aes(f, mod)) +
+  geom_spoke(aes(y = 0, radius = mod, angle = pi/2), color = "#F8766D") +
+  geom_point(color = "#F8766D") +
+  labs(x = "Frequenza (Hz)", y = "Intensità", title = "Spettro dell'input compensato")
+```
+
+Il segnale compensato presenta un **fondo spettrale diffuso e privo di struttura armonica evidente**, compatibile con un rumore di tipo bianco. Pertanto, ai fini di eliminare quest'ultimo e ricostruire il segnale utile come somma delle sole componenti armoniche dominanti, viene realizzata una **maschera in frequenza** che annulla le componenti associate al fondo spettrale.
+
+```{r}
+N <- nrow(u)
+k <- 0:(N-1)
+
+# La soglia per selezionare le componenti predominanti
+# viene individuata visivamente dallo spettro
+threashold <- 0.04
+
+
+u_spectrum <- tibble(
+    f = ifelse(k <= N/2, k, k-N) * fs/N,
+    U = fft(u$u_comp),
+    mask = Mod(U)/N > threashold,        # vettore di booleani
+    U_filtered = U*mask
+)
+
+u_spectrum %>% dplyr::filter(f>=0) %>%
+  mutate(mod = 2*Mod(U_filtered)/N) %>% 
+  ggplot(aes(f, mod)) + 
+  geom_spoke(aes(y = 0, radius = mod, angle = pi/2), color = "#F8766D") +
+  geom_point(color = "#F8766D") +
+  labs(x = "Frequenza (Hz)", y = "Intensità", title = "Spettro del input mascherato")
+```
+
+**Nota**: la componente DC viene processata dalla maschera perché visivamente si vede (e si sa a priori in questo caso) che il segnale di ingresso a media nulla. In generale sarebbe buona pratica sottrarre tale componente.
+
+```{r}
+# Segnale nel tempo mediante FFT^-1
+u <- u %>% mutate(
+    u_new = Re(fft(u_spectrum$U_filtered, inverse = T))/N
+  )
+```
+
+```{r echo=FALSE}
+u %>%
+  plot_ly(x = ~t) %>%
+  add_lines(y = ~u, name = "Ideale") %>%
+  add_lines(y = ~u_new, name = "Con maschera") %>%
+  layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = ""), title = "Input compensato e filtrato")
+```
+
+Si conclude visivamente come adesso il segnale compensato tenda ad assomigliare molto bene a quello ideale, peraltro con nessuna particolare discrepanza sulle code. Si può quantificare la differenza tra le due curve tramite i residui:
+$$
+\varepsilon = u_{id} - u_{comp} .
+$$
+
+Come era prevedibile la componente di rumore bianco è pressoché irrisoria rispetto alle armoniche pure. Comunque è un buon algoritmo per eliminare il rumore bianco.
+
+```{r}
+# Calcolo i residui tra ideale e ricostruito
+eps <- tibble(
+  t = u$t,
+  e = u$u - u$u_new
+)
+
+eps %>% ggplot(aes(x = t, y = e)) + geom_point()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

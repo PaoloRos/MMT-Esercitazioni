@@ -415,3 +415,89 @@ y %>% select(t, y_n, y_flt) %>% mutate(u_flt = u_comp$u_flt) %>%
   labs(x="Tempo (s)", y="", colour="Segnale")
 ```
 
+
+```{r eval=FALSE, include=FALSE}
+# costruisco la funzione di compensazione
+
+dyn_compensation <- function(df, tf, name_sig = "y", padding = TRUE, alpha = 2) {
+  
+  # df: contains the signal(t, `name_sig`)
+  # alpha: scale factor of padding
+  # tf: transfer function, it must be a class `tf`
+  
+  if (!is.character(name_sig) || length(name_sig) != 1)
+    stop("name_sig must be a string of length 1.")
+
+  if(!(name_sig %in% names(df)))
+    stop("The specified `name_sig` is not contained in `df`")
+  
+  # Sampling parameters
+  dt <- diff(df$t)
+  Ts <- mean(dt)            # sampling period
+    
+  if (sd(dt) / Ts > 1e-6) {
+    stop("Non-uniform sampling detected.")
+  }
+    
+  fs <- 1 / Ts              # sampling frequency
+  
+  y <- df[[name_sig]]
+  
+  if(padding) {
+    N <- nrow(df)
+    M <- alpha*N            # padding length
+    
+    pad_left  <- floor((M - N)/2)
+    pad_right <- ceiling((M - N)/2)
+    t_start <- df$t[1] - pad_left * Ts
+    
+    out <- tibble(
+      t = seq(from = t_start, by = Ts, length.out = M),
+      y = c(
+        rep(0, pad_left),
+        y,
+        rep(0, pad_right)
+      )
+    )
+    
+    stopifnot(isTRUE(all.equal(
+        out$y[(pad_left+1):(pad_left+N)],
+        y,
+        tolerance = 1e-10
+        )
+      )
+    )
+
+  }
+  
+  freq <- tibble(
+    k = 0:(M-1),
+    f = ifelse(k <= M/2, k, k-M) * fs/M,   # FFT is symmetric respect to the frequency!
+    w = 2*pi*f
+  )
+
+  Hiw <- freqresp(H, freq$w)
+  
+  out <- out %>% mutate(
+    Y = fft(y),
+    U = Y/Hiw,
+    u = Re(fft(U, inverse = TRUE)) / M      # Re() to avoid numerical residuals in Im() component
+                                            # fft() is not normalized, so it's divided by `M`
+  )
+  
+  return(out[ (pad_left+1):(pad_left+N), ])
+}
+
+dyn_compensation(y, H, name_sig = "y_flt") %>% ggplot(aes(x = t)) +
+  geom_line(aes(y = u))
+
+```
+
+
+
+
+
+
+
+
+

@@ -22,6 +22,7 @@ Questi riquadri servono a mettere in rilievo quando viene data risposta ai quesi
     -   [`dig_signal_proc.R`](dig_signal_proc.R): funzioni relative al *digital signal processing*
     -   [`graphics.R`](graphics.R): funzioni relative alla formattazione della grafica
 2.  [Esercitazione 1 - Segnale di onda pressoria](ex1.Rmd)
-3.  [Esercitazione 2 - Modulaione di ampiezza](ex2.Rmd)
+3.  [Esercitazione 2 - Modulazione di ampiezza](ex2.Rmd)
 4.  [Esercitazione 3 - Taratura dinamica tramite regressione non lineare](ex3.Rmd)
 5. [Esercitazione 4 - Compensazione dinamica](ex4.Rmd)
+6. [Esercitazione 5- Inversione delle armoniche pure](ex5.Rmd)
