@@ -69,12 +69,32 @@ ul.task-list li input[type="checkbox"] {
     "search-label": "Ricerca"
   }
 }</script>
+</head><body class="nav-fixed quarto-light"><div id="password-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%;
+            background:white; z-index:9999; display:flex;
+            align-items:center; justify-content:center; flex-direction:column;">
+  <h2>Accesso riservato</h2>
+  <input type="password" id="pw-input" placeholder="Password">
+  <button onclick="checkPassword()">Accedi</button>
+  <p id="error" style="color:red;"></p>
+</div>
+
+<script>
+  function checkPassword() {
+    const pw = document.getElementById("pw-input").value;
+    if (pw === "paolorossi") {
+      document.getElementById("password-overlay").style.display = "none";
+    } else {
+      document.getElementById("error").innerText = "Password errata";
+    }
+  }
+</script>
+
 
 
 <link rel="stylesheet" href="styles.css">
-</head>
 
-<body class="nav-fixed quarto-light">
+
+
 
 <div id="quarto-search-results"></div>
   <header id="quarto-header" class="headroom fixed-top">
@@ -103,12 +123,12 @@ ul.task-list li input[type="checkbox"] {
     </a>
     <ul class="dropdown-menu" aria-labelledby="nav-menu-librerie">    
         <li>
-    <a class="dropdown-item" href="./dig_signal_proc.R"><i class="bi bi-cpu" role="img">
+    <a class="dropdown-item" href="./dsp_library.html"><i class="bi bi-cpu" role="img">
 </i> 
  <span class="dropdown-text">Digital Signal Processing</span></a>
   </li>  
         <li>
-    <a class="dropdown-item" href="./graphics.R"><i class="bi bi-bar-chart" role="img">
+    <a class="dropdown-item" href="./graph_library.html"><i class="bi bi-bar-chart" role="img">
 </i> 
  <span class="dropdown-text">Formattazione grafica</span></a>
   </li>  
@@ -185,7 +205,7 @@ ul.task-list li input[type="checkbox"] {
     <div>
     <div class="quarto-title-meta-heading">Data di Pubblicazione</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">22 gennaio 2026</p>
+      <p class="date">24 gennaio 2026</p>
     </div>
   </div>
   
@@ -199,7 +219,6 @@ ul.task-list li input[type="checkbox"] {
 
 <p>Questo sito contiene la raccolta di esercitazioni da consegnare all’esame di <strong>Misure Industriali</strong>, del corso di Ingegneria Industriale, presso l’Università di Trento.</p>
 <p>Le esercitazioni fanno riferimento al sito relativo al <a href="https://mmt-unitn.github.io">corso di insegnamento</a>.</p>
-<p><strong>poi devo mettere le librerie in un htmle per vedere tutto formattata bene a codice</strong></p>
 <div class="exam-points">
 <p>Questi riquadri servono a mettere in rilievo quando viene data risposta ai quesiti dell’esercitazione.</p>
 </div>

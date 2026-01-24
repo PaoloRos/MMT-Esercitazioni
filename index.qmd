@@ -10,8 +10,6 @@ Questo sito contiene la raccolta di esercitazioni da consegnare all'esame di **M
 
 Le esercitazioni fanno riferimento al sito relativo al [corso di insegnamento](https://mmt-unitn.github.io).
 
-**poi devo mettere le librerie in un htmle per vedere tutto formattata bene a codice**
-
 ::: exam-points
 Questi riquadri servono a mettere in rilievo quando viene data risposta ai quesiti dell'esercitazione.
 :::

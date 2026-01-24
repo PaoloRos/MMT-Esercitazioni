@@ -16,6 +16,7 @@ library(plotly)
 
 library(signal)
 library(control)
+library(stats)
 
 source("graphics.R")
 source("dig_signal_proc.R")
@@ -68,7 +69,7 @@ s <- tibble(
 )
 ```
 
-```{r}
+```{r echo=FALSE}
 spectrum_fft(s, fs, "u_n") %>% ggplot(aes(x = f, y = mod)) +
   geom_spoke(aes(y=0, radius = mod, angle = pi/2)) +
   geom_point() +
@@ -120,7 +121,7 @@ plot_ly() %>%
 Stima dell'ingresso a partire da uscita del sistema e da modulo e fase della FdT.
 :::
 
-R è in grado di operare nel **domino complesso**, perciò viene effettuata la compensazione dell'ingresso nel dominio della frequenza, come in [Esercitazione 4](ex4.Rmd). Nello specifico, mediante la funzione di libreria [`dyn_compensation`](dig_signal_proc.R) vengono essenzialmente svolti i segueni passaggi, presupponendo un'opportuno segnale d'uscita passatogli come parametro:
+R è in grado di operare nel **domino complesso**, perciò viene effettuata la compensazione dell'ingresso nel dominio della frequenza, come in [Esercitazione 4](ex4.Rmd). Nello specifico, mediante la funzione di libreria [`dyn_compensation`](dsp_library.Rmd) vengono essenzialmente svolti i segueni passaggi, presupponendo un'opportuno segnale d'uscita passatogli come parametro:
 
 1. eventuale *padding*, impostato dall'utente, per garantire la completa periodicità del segnale;
 
@@ -143,7 +144,7 @@ ggbodeplot_continous(tf(den, num), fs, fmin = 1e-1, fmax=1e2) +
 
 Sulla base dei diagrammi di bode ed osservando lo spettro dell'uscita che segue, è evidente che le componenti oltre i $`r round(sqrt(2)*fn, 2)`\,\mathrm{Hz}$ verranno **amplificate**. 
 
-```{r}
+```{r echo=FALSE}
 y <- s %>% dplyr::select(t, y) 
 
 spectrum_fft(y, name_sig = "y") %>% dplyr::filter(f < 100) %>%
@@ -173,9 +174,9 @@ u %>%
   layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = ""), title = "Input compensato")
 ```
 
-Come anticipato l'inversione della FdT comporta la ricostruzione di un segnale **abbastanza rumoroso**. Per comprendere il tipo di rumore e quali componenti lo costituiscano si osserva lo spettro del segnale.
+Come anticipato l'inversione della FdT comporta la ricostruzione di un segnale **abbastanza rumoroso**; perdipiù la coda destra presenta delle forti amplificazioni - derivanti presumibilmente dal taglio delle code durante il *padding* -. Per comprendere il tipo di rumore e quali componenti lo costituiscano si osserva lo spettro del segnale.
 
-```{r}
+```{r echo=FALSE}
 spectrum_fft(u, name_sig = "u_comp") %>% 
   ggplot(aes(f, mod)) +
   geom_spoke(aes(y = 0, radius = mod, angle = pi/2), color = "#F8766D") +
@@ -190,7 +191,9 @@ N <- nrow(u)
 k <- 0:(N-1)
 
 # La soglia per selezionare le componenti predominanti
-# viene individuata visivamente dallo spettro
+# viene individuata visivamente dallo spettro, ricordando
+# che lo spettro completo (bilatero), possiede metà dell'energia
+# spettrale di quello monolarero
 threashold <- 0.04
 
 
@@ -209,7 +212,7 @@ u_spectrum %>% dplyr::filter(f>=0) %>%
   labs(x = "Frequenza (Hz)", y = "Intensità", title = "Spettro del input mascherato")
 ```
 
-**Nota**: la componente DC viene processata dalla maschera perché visivamente si vede (e si sa a priori in questo caso) che il segnale di ingresso a media nulla. In generale sarebbe buona pratica sottrarre tale componente.
+**Nota**: la componente DC viene processata dalla maschera perché visivamente si vede (e si sa a priori in questo caso) che il segnale di ingresso è a media nulla. In generale sarebbe buona pratica sottrarre tale componente.
 
 ```{r}
 # Segnale nel tempo mediante FFT^-1
@@ -226,35 +229,25 @@ u %>%
   layout(xaxis = list(title = "Tempo (s)"), yaxis = list(title = ""), title = "Input compensato e filtrato")
 ```
 
-Si conclude visivamente come adesso il segnale compensato tenda ad assomigliare molto bene a quello ideale, peraltro con nessuna particolare discrepanza sulle code. Si può quantificare la differenza tra le due curve tramite i residui:
-$$
-\varepsilon = u_{id} - u_{comp} .
-$$
-
-Come era prevedibile la componente di rumore bianco è pressoché irrisoria rispetto alle armoniche pure. Comunque è un buon algoritmo per eliminare il rumore bianco.
+Si conclude visivamente come adesso il segnale compensato tenda a **sovrapporsi su quello ideale**, peraltro con nessuna particolare discrepanza sulle code, a differenza del caso precedente. Cionostante, si osserva un lieve **ritardo** che va accumulandosi nel tempo. Come prova di questo fenomeno, si può osservare la **differenza di fase** tra i due segnali.
 
 ```{r}
-# Calcolo i residui tra ideale e ricostruito
-eps <- tibble(
-  t = u$t,
-  e = u$u - u$u_new
-)
+phase <- tibble(
+    f = ifelse(k <= N/2, k, k-N) * fs/N,
+    U_id = fft(u$u),
+    U_mask = fft(u$u_new),
+    diff = (Arg(U_id) - Arg(U_mask))*180/pi
+) %>% dplyr::filter(f>0)  # fase antisimmetrica rispetto alla frequenza
 
-eps %>% ggplot(aes(x = t, y = e)) + geom_point()
+# Regressione qualitativa per evidenziare l'andamento della differenza di fase
+phase.fit <- loess(diff ~ f, data = phase, span = 0.5)
+phase$fit <- predict(phase.fit)
+
+phase %>% select(-U_id, -U_mask) %>% pivot_longer(-f) %>%
+  ggplot(aes(x = f, y = value, color = name)) +
+  geom_line() +
+  scale_color_discrete(labels = c(diff = latex2exp::TeX("$\\Delta \\varphi"), fit = "Fit")) +
+  labs(x = "Frequenza (Hz)", y = "Fase (°)", colour = "Legenda")
 ```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+È qualitativamente evidente come la differenza di fase **non sia costante**, che spiega il ritardo accumulato nel tempo. La ragione di questo fatto potrebbe risiedere in **errori numerici**, come per esempio nella computazione di `fft()` o di `freqresp` relativa alla FdT. Ad ogni modo, è molto contenuto tale ritardo, percui ai fini dell'esercitazione si può accettare il risultato.
