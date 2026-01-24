@@ -36,7 +36,8 @@ website:
 
 format:
   html:
-    include-in-header: include/password.html
+    # include-in-header: include/password.html
+    include-in-header: include/noindex.html
     css: styles.css
     toc: true
     number-sections: true
@@ -51,7 +52,4 @@ format:
     fig-height: 5
     fig-dpi: 300
     fig-align: center
-    meta:
-      - name: robots
-        content: noindex
 
