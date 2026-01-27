@@ -299,7 +299,7 @@ Osservando gli spettri, è ragionevole adottare una frequenza di taglio di $f_c 
 
 Dunque, a partire da questa considerazione, si trova la frequenza più adatta procedendo per tentativi.
 
-Ai fini del filtraggio, è stato impiegato un **filtro digitale offline butterworth del terzo ordine**.
+Ai fini del filtraggio, è stato impiegato un **filtro digitale online butterworth del terzo ordine**. Notare che l'operazione di filtraggio è offline, in quanto non si effettua in contemporanea all'acquisizione. Tuttavia, il genere di filtro impiegato è formalmente online, essendo un **sistema causale** (i.e: processa il segnale elemento per elemento).
 
 ```{r}
 fc <- 2     # freq. di taglio
@@ -380,7 +380,9 @@ p1+p2
 Eliminazione del ritardo.
 :::
 
-L'applicazione di un filtro offline introduce un ritardo rispetto al segnale originale. Per sopperire a tale ritardo si può [filtrare avanti e indietro](https://mmt-unitn.github.io/teoria.html#funzioni-di-trasferimento) nel tempo: in R questo filtro a fase zero è realizzato mediante la funzione `signal::filtfilt`. Tuttavia, sarà necessario affrontare un problema di **distorsione nelle code** del segnale, causato da un **padding automatico** della funzione.
+L'applicazione del un filtro online introduce un ritardo rispetto al segnale originale, infatti la fase della FdT non è sempre pari a zero. Per sopperire a tale ritardo si può [filtrare avanti e indietro](https://mmt-unitn.github.io/teoria.html#funzioni-di-trasferimento) nel tempo: in R questo filtro a fase zero è realizzato mediante la funzione `signal::filtfilt`. Tuttavia, sarà necessario affrontare un problema di **distorsione nelle code** del segnale, causato da un **padding automatico** della funzione.
+
+Questa volta si può parlare formalmente di filtro **offline**: infatti `filtfilt` implenenta un **sistema non-causale**, visto che necessita delle misure future per un dato istante (i.e: filtraggio indietro).
 
 ```{r}
 p.flt_5Hz <- p.flt_5Hz %>% 
