@@ -250,4 +250,4 @@ phase %>% select(-U_id, -U_mask) %>% pivot_longer(-f) %>%
   labs(x = "Frequenza (Hz)", y = "Fase (°)", colour = "Legenda")
 ```
 
-È qualitativamente evidente come la differenza di fase **non sia costante**, che spiega il ritardo accumulato nel tempo. La ragione di questo fatto potrebbe risiedere in **errori numerici**, come per esempio nella computazione di `fft()` o di `freqresp` relativa alla FdT. Ad ogni modo, è molto contenuto tale ritardo, percui ai fini dell'esercitazione si può accettare il risultato.
+È qualitativamente evidente come la differenza di fase **non sia costante**, che spiega il ritardo accumulato nel tempo. La ragione di questo fatto potrebbe risiedere in **errori numerici**, come per esempio nella computazione di `fft()` e della sua inversa o di `freqresp` relativa alla FdT. D'altro canto, si può supporre di attribuire questo ritardo non costante ad una **fase non lineare della FdT inversa** in corrispondenza delle armoniche del segnale (cfr. i diagrammi di Bode della FdT inversa). Ad ogni modo, è molto contenuto tale ritardo, percui ai fini dell'esercitazione si può accettare il risultato.
