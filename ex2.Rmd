@@ -311,13 +311,13 @@ Comparazione con la misura originale.
 :::
 
 ```{r}
-ym.flt %>% pivot_longer(cols = c("yn", "y_flt2")) %>%
+(ym.flt %>% pivot_longer(cols = c("yn", "y_flt2")) %>%
   mutate(
     name = factor(name, levels = c("yn", "y_flt2"))
   ) %>% ggplot(aes(x = t, y = value, colour = name)) +
   geom_line() +
   scale_colour_discrete(labels = c(yn = "Originale", y_flt2 = "Demodulato")) +
-  labs(x = "Tempo (s)", y = "Segnale", colour = "Segnale")
+  labs(x = "Tempo (s)", y = "Segnale", colour = "Segnale")) %>% ggplotly()
 ```
 
 Si osservi come il processo di demodulazione ha permesso anche di **filtrare il rumore**.
